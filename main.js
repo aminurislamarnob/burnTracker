@@ -354,51 +354,55 @@ ipcMain.handle('claude:startSession', async (event, { accountId, sessionKey, pro
 
     // Handle when the page loads
     chatWin.webContents.on('did-finish-load', () => {
-      // Inject script to find editor, insert text natively, and click send
+      // Inject script to find editor, paste text natively, and send
       const script = `
         (function() {
+          let attempts = 0;
           function waitForEditor() {
-            const editor = document.querySelector('.ProseMirror');
+            attempts++;
+            const editor = document.querySelector('div[contenteditable="true"], .ProseMirror');
             if (!editor) {
-              setTimeout(waitForEditor, 200);
+              if (attempts < 50) setTimeout(waitForEditor, 200);
               return;
             }
             
-            // Focus and insert text using execCommand for React compatibility
+            // Focus and insert text using a paste event (safest for ProseMirror)
             editor.focus();
-            document.execCommand('insertText', false, ${JSON.stringify(prompt)});
+            const dataTransfer = new DataTransfer();
+            dataTransfer.setData('text/plain', ${JSON.stringify(prompt)});
+            const pasteEvent = new ClipboardEvent('paste', {
+              clipboardData: dataTransfer,
+              bubbles: true,
+              cancelable: true
+            });
+            editor.dispatchEvent(pasteEvent);
             
-            // Wait a moment for React state to update, then click send
+            // Wait a moment for ProseMirror state to update, then click send
             setTimeout(() => {
-              const buttons = Array.from(document.querySelectorAll('button'));
-              const sendBtn = buttons.find(b => 
-                b.getAttribute('aria-label') === 'Send Message' || 
-                b.querySelector('svg') && !b.disabled
-              );
-              
-              if (sendBtn) {
+              const sendBtn = document.querySelector('button[aria-label="Send Message"]');
+              if (sendBtn && !sendBtn.disabled) {
                 sendBtn.click();
               } else {
                 // Fallback: Dispatch Enter key event
-                const event = new KeyboardEvent('keydown', {
+                const enterEvent = new KeyboardEvent('keydown', {
                   key: 'Enter',
                   code: 'Enter',
-                  which: 13,
                   keyCode: 13,
+                  which: 13,
                   bubbles: true,
                   cancelable: true
                 });
-                editor.dispatchEvent(event);
+                editor.dispatchEvent(enterEvent);
               }
-            }, 500);
+            }, 600);
           }
-          waitForEditor();
+          setTimeout(waitForEditor, 500);
         })();
       `;
       chatWin.webContents.executeJavaScript(script);
     });
 
-    await chatWin.loadURL('https://claude.ai/chat/new');
+    await chatWin.loadURL('https://claude.ai/new');
     return { success: true };
   } catch (err) {
     console.error('Error starting session:', err);
