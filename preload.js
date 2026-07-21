@@ -21,6 +21,13 @@ contextBridge.exposeInMainWorld('claudeAPI', {
   // Live Claude Server Limits
   fetchLiveLimits: (sessionKey) => ipcRenderer.invoke('claude:fetchLiveLimits', sessionKey),
 
+  // Direct Messaging System
+  startSession: (accountId, sessionKey, prompt) => ipcRenderer.invoke('claude:startSession', { accountId, sessionKey, prompt }),
+
+  // Antigravity Usage Tracker
+  antigravityLogin: (clientId) => ipcRenderer.invoke('antigravity:login', clientId),
+  antigravityFetchQuota: (token) => ipcRenderer.invoke('antigravity:fetchQuota', token),
+
   // Native macOS notifications
   notify: (payload) => ipcRenderer.invoke('claude:notify', payload),
   
