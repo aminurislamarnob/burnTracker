@@ -62,12 +62,12 @@ function createWindow() {
 }
 
 function createTray() {
-  const iconPath = path.join(__dirname, 'assets', 'tray-iconTemplate.png');
+  const iconPath = path.join(__dirname, 'assets', 'tray-icon.png');
   if (fs.existsSync(iconPath)) {
     try {
       const trayImage = nativeImage.createFromPath(iconPath);
       // setTemplateImage enables automatic black/white conversion based on dark/light status bars
-      trayImage.setTemplateImage(true);
+      trayImage.setTemplateImage(false);
 
       tray = new Tray(trayImage);
       tray.setToolTip('Claude Quota Widget');
