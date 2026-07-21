@@ -97,15 +97,35 @@
       <!-- SETTINGS VIEW -->
       <section id="settings-view" class="view-panel hidden">
         <div class="settings-card">
+          
+          <!-- Connected Accounts -->
           <div class="card-title-row">
             <h3>Connected Accounts</h3>
           </div>
           <div id="accounts-settings-list" class="accounts-settings-list">
             <!-- Dynamically populated list of account names + delete buttons -->
           </div>
-        </div>
 
-        <div class="settings-card mt-15">
+          <div style="height: 1px; background: var(--border-color); margin: 24px 0;"></div>
+
+          <!-- Add Claude Account -->
+          <h3>Add Claude Account</h3>
+          <form id="add-account-form">
+            <div class="form-group">
+              <label for="account-label">Account Label</label>
+              <input type="text" id="account-label" placeholder="e.g. Personal, Work, Client A" required>
+            </div>
+            <div class="form-group">
+              <label for="account-session-key">Session Key (sessionKey)</label>
+              <input type="password" id="account-session-key" placeholder="Paste sk-ant-sid02-..." required>
+              <span class="field-help">Your sessionKey cookie value from claude.ai</span>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Add Account</button>
+          </form>
+
+          <div style="height: 1px; background: var(--border-color); margin: 24px 0;"></div>
+
+          <!-- Auto-Refresh -->
           <h3>Auto-Refresh</h3>
           <div class="form-group">
             <label for="refresh-interval">Background sync interval</label>
@@ -118,9 +138,10 @@
             </select>
             <span class="field-help">Quotas also refresh instantly whenever you open the widget.</span>
           </div>
-        </div>
 
-        <div class="settings-card mt-15">
+          <div style="height: 1px; background: var(--border-color); margin: 24px 0;"></div>
+
+          <!-- Notifications -->
           <h3>Notifications</h3>
           <div class="form-group">
             <label for="alert-threshold">Alert when session usage reaches</label>
@@ -137,35 +158,10 @@
             </select>
             <span class="field-help">Sends a macOS notification the first time your 5-hour session crosses this level.</span>
           </div>
-        </div>
 
-        <div class="settings-card mt-15">
-          <h3>Add Claude Account</h3>
-          <form id="add-account-form">
-            <div class="form-group">
-              <label for="account-label">Account Label</label>
-              <input type="text" id="account-label" placeholder="e.g. Personal, Work, Client A" required>
-            </div>
-            <div class="form-group">
-              <label for="account-session-key">Session Key (sessionKey)</label>
-              <input type="password" id="account-session-key" placeholder="Paste sk-ant-sid02-..." required>
-              <span class="field-help">Your sessionKey cookie value from claude.ai</span>
-            </div>
-            <button type="submit" class="btn btn-primary w-100">Add Account</button>
-          </form>
-        </div>
+          <div style="height: 1px; background: var(--border-color); margin: 24px 0;"></div>
 
-        <div class="settings-card mt-15">
-          <h3>Antigravity / Gemini CLI Account</h3>
-          <div class="form-group">
-            <span class="settings-desc">Link your local Antigravity or Gemini CLI to track real usage quotas.</span>
-          </div>
-          <div id="ag-account-info" style="margin-bottom: 12px; font-size: 13px; font-weight: 600;"></div>
-          <button id="btn-ag-login" type="button" class="btn btn-primary w-100">Sync with Antigravity / Gemini CLI</button>
-          <button id="btn-ag-logout" type="button" class="btn btn-secondary w-100 hidden mt-10">Remove Account</button>
-        </div>
-
-        <div class="settings-card mt-15">
+          <!-- Instructions -->
           <h3>How to locate your sessionKey</h3>
           <div class="instructions-block">
             <ol>
@@ -177,6 +173,16 @@
               <li>Paste the key into the input field above, name it, and click Add.</li>
             </ol>
           </div>
+        </div>
+
+        <div class="settings-card mt-15">
+          <h3>Antigravity / Gemini CLI Account</h3>
+          <div class="form-group">
+            <span class="settings-desc">Link your local Antigravity or Gemini CLI to track real usage quotas.</span>
+          </div>
+          <div id="ag-account-info" style="margin-bottom: 12px; font-size: 13px; font-weight: 600;"></div>
+          <button id="btn-ag-login" type="button" class="btn btn-primary w-100">Sync with Antigravity / Gemini CLI</button>
+          <button id="btn-ag-logout" type="button" class="btn btn-secondary w-100 hidden mt-10">Remove Account</button>
         </div>
       </section>
     </main>
