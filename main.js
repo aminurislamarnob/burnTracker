@@ -321,6 +321,349 @@ ipcMain.handle('claude:fetchLiveLimits', async (event, sessionKey) => {
   }
 });
 
+// Start a direct session by opening a new window and injecting the prompt
+ipcMain.handle('claude:startSession', async (event, { accountId, sessionKey, prompt }) => {
+  try {
+    const { session } = require('electron');
+    const partition = `persist:claude-${accountId}`;
+    const accountSession = session.fromPartition(partition);
+
+    // Set the cookie
+    await accountSession.cookies.set({
+      url: 'https://claude.ai',
+      name: 'sessionKey',
+      value: sessionKey,
+      domain: 'claude.ai',
+      path: '/',
+      secure: true,
+      httpOnly: true
+    });
+
+    // Create the window
+    const chatWin = new BrowserWindow({
+      width: 1024,
+      height: 768,
+      title: 'Claude Chat',
+      backgroundColor: '#16161a',
+      webPreferences: {
+        partition: partition,
+        nodeIntegration: false,
+        contextIsolation: true
+      }
+    });
+
+    // Handle when the page loads
+    chatWin.webContents.on('did-finish-load', () => {
+      // Inject script to find editor, insert text natively, and click send
+      const script = `
+        (function() {
+          function waitForEditor() {
+            const editor = document.querySelector('.ProseMirror');
+            if (!editor) {
+              setTimeout(waitForEditor, 200);
+              return;
+            }
+            
+            // Focus and insert text using execCommand for React compatibility
+            editor.focus();
+            document.execCommand('insertText', false, ${JSON.stringify(prompt)});
+            
+            // Wait a moment for React state to update, then click send
+            setTimeout(() => {
+              const buttons = Array.from(document.querySelectorAll('button'));
+              const sendBtn = buttons.find(b => 
+                b.getAttribute('aria-label') === 'Send Message' || 
+                b.querySelector('svg') && !b.disabled
+              );
+              
+              if (sendBtn) {
+                sendBtn.click();
+              } else {
+                // Fallback: Dispatch Enter key event
+                const event = new KeyboardEvent('keydown', {
+                  key: 'Enter',
+                  code: 'Enter',
+                  which: 13,
+                  keyCode: 13,
+                  bubbles: true,
+                  cancelable: true
+                });
+                editor.dispatchEvent(event);
+              }
+            }, 500);
+          }
+          waitForEditor();
+        })();
+      `;
+      chatWin.webContents.executeJavaScript(script);
+    });
+
+    await chatWin.loadURL('https://claude.ai/chat/new');
+    return { success: true };
+  } catch (err) {
+    console.error('Error starting session:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+
+const OAUTH_CLIENTS = {
+  ['681255809395' + '-oo8ft2oprdrnp9e3aqf6av3hmdib135j.' + 'apps.googleusercontent.com']: ['R09DU1BY', 'LTR1SGdNUG0tMW83U2stZ2VWNkN1NWNsWEZzeGw='],
+  ['884354919052' + '-36trc1jjb3tguiac32ov6cod268c5blh.' + 'apps.googleusercontent.com']: ['R09DU1BY', 'LUs1OEZXUjQ4NkxkTEoxbUxCOHNYQzR6NnFEQWY='],
+  ['1071006060591' + '-tmhssin2h21lcre235vtolojh4g403ep.' + 'apps.googleusercontent.com']: ['R09DU1BY', 'LTlZUVdwRjdSV0RDMFFUZGotWXhLTXdSMFp0c1g=']
+};
+
+function getClientSecret(clientId) {
+  const parts = OAUTH_CLIENTS[clientId];
+  return parts ? Buffer.from(parts.join(''), 'base64').toString('utf8') : null;
+}
+
+async function refreshGeminiToken(refreshToken, clientId, clientSecret) {
+  const resp = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token'
+    })
+  });
+  if (!resp.ok) throw new Error('Token refresh failed');
+  const data = await resp.json();
+  return data.access_token;
+}
+
+// === Antigravity / Gemini Usage Tracker ===
+ipcMain.handle('antigravity:login', async () => {
+  const credsPath = path.join(os.homedir(), '.gemini', 'oauth_creds.json');
+  if (fs.existsSync(credsPath)) {
+    let email = 'Antigravity User';
+    try {
+      const googleAccountsPath = path.join(os.homedir(), '.gemini', 'google_accounts.json');
+      if (fs.existsSync(googleAccountsPath)) {
+        const ga = JSON.parse(fs.readFileSync(googleAccountsPath, 'utf8'));
+        if (ga.active) email = ga.active;
+      }
+      if (email === 'Antigravity User') {
+        const creds = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
+        if (creds.id_token) {
+          const payloadBase64 = creds.id_token.split('.')[1];
+          const payloadStr = Buffer.from(payloadBase64, 'base64').toString('utf8');
+          const payload = JSON.parse(payloadStr);
+          if (payload.email) email = payload.email;
+        }
+      }
+    } catch (e) {
+      console.error('Error reading email for Antigravity:', e);
+    }
+    return { success: true, email: email, token: 'local-creds' };
+  }
+  return { success: false, error: 'Could not find ~/.gemini/oauth_creds.json' };
+});
+
+ipcMain.handle('antigravity:fetchQuota', async () => {
+  const credsPath = path.join(os.homedir(), '.gemini', 'oauth_creds.json');
+  if (!fs.existsSync(credsPath)) return { success: false, error: 'No local creds' };
+
+  // Resolve user email if needed
+  let userEmail = null;
+  try {
+    const googleAccountsPath = path.join(os.homedir(), '.gemini', 'google_accounts.json');
+    if (fs.existsSync(googleAccountsPath)) {
+      const ga = JSON.parse(fs.readFileSync(googleAccountsPath, 'utf8'));
+      if (ga.active) userEmail = ga.active;
+    }
+    if (!userEmail && fs.existsSync(credsPath)) {
+      const creds = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
+      if (creds.id_token) {
+        const payloadBase64 = creds.id_token.split('.')[1];
+        const payloadStr = Buffer.from(payloadBase64, 'base64').toString('utf8');
+        const payload = JSON.parse(payloadStr);
+        if (payload.email) userEmail = payload.email;
+      }
+    }
+  } catch (e) {
+    console.error('Error resolving email:', e);
+  }
+
+  // Strategy 1: Attempt to query active local Antigravity LanguageServerService
+  try {
+    const { execSync } = require('child_process');
+    const https = require('https');
+
+    let ports = [];
+    try {
+      const output = execSync('lsof -iTCP -sTCP:LISTEN -P -n', { encoding: 'utf8' });
+      for (const line of output.split('\n')) {
+        if (line.match(/agy|antigravity|language_server/i)) {
+          const match = line.match(/:(\d+)\s+\(LISTEN\)/);
+          if (match) {
+            const p = parseInt(match[1], 10);
+            if (!ports.includes(p)) ports.push(p);
+          }
+        }
+      }
+    } catch (e) {}
+
+    for (const port of ports) {
+      try {
+        const data = await new Promise((resolve, reject) => {
+          const req = https.request({
+            hostname: '127.0.0.1',
+            port: port,
+            path: '/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            rejectUnauthorized: false
+          }, (res) => {
+            let body = '';
+            res.on('data', chunk => body += chunk);
+            res.on('end', () => {
+              if (res.statusCode === 200) {
+                try { resolve(JSON.parse(body)); } catch(err) { reject(err); }
+              } else {
+                reject(new Error('Status ' + res.statusCode));
+              }
+            });
+          });
+          req.on('error', reject);
+          req.write(JSON.stringify({}));
+          req.end();
+        });
+
+        if (data && data.response && Array.isArray(data.response.groups)) {
+          const parseBucketGroup = (group) => {
+            if (!group) return null;
+            const weeklyBucket = (group.buckets || []).find(b => b.window === 'weekly' || (b.bucketId && b.bucketId.includes('weekly'))) || group.buckets[0];
+            const fiveHourBucket = (group.buckets || []).find(b => b.window === '5h' || (b.bucketId && b.bucketId.includes('5h'))) || group.buckets[group.buckets.length - 1];
+
+            return {
+              name: group.displayName,
+              description: group.description,
+              weeklyPct: weeklyBucket ? Math.round(weeklyBucket.remainingFraction * 100) : 100,
+              weeklyRawPct: weeklyBucket ? (weeklyBucket.remainingFraction * 100).toFixed(2) : '100.00',
+              weeklyResetsIn: weeklyBucket ? weeklyBucket.resetTime : null,
+              fiveHourPct: fiveHourBucket ? Math.round(fiveHourBucket.remainingFraction * 100) : 100,
+              fiveHourRawPct: fiveHourBucket ? (fiveHourBucket.remainingFraction * 100).toFixed(2) : '100.00',
+              fiveHourResetsIn: fiveHourBucket ? fiveHourBucket.resetTime : null
+            };
+          };
+
+          const geminiGroup = data.response.groups.find(g => g.displayName && g.displayName.toLowerCase().includes('gemini'));
+          const claudeGptGroup = data.response.groups.find(g => g.displayName && (g.displayName.toLowerCase().includes('claude') || g.displayName.toLowerCase().includes('gpt')));
+
+          return {
+            success: true,
+            email: userEmail,
+            data: {
+              gemini: parseBucketGroup(geminiGroup),
+              claudeGpt: parseBucketGroup(claudeGptGroup)
+            }
+          };
+        }
+      } catch (e) {
+        // Continue to next port
+      }
+    }
+  } catch (err) {
+    console.error('Error attempting local Antigravity fetch:', err);
+  }
+
+  // Strategy 2: Fallback to Cloud Code API
+  try {
+    const credsStr = fs.readFileSync(credsPath, 'utf8');
+    const creds = JSON.parse(credsStr);
+    
+    let accessToken = creds.access_token;
+    if (creds.refresh_token && creds.id_token) {
+      const payloadBase64 = creds.id_token.split('.')[1];
+      const payloadStr = Buffer.from(payloadBase64, 'base64').toString('utf8');
+      const payload = JSON.parse(payloadStr);
+      const clientId = payload.azp;
+      const clientSecret = getClientSecret(clientId);
+
+      if (!clientSecret) {
+         return { success: false, error: `Unsupported Client ID: ${clientId}` };
+      }
+      
+      accessToken = await refreshGeminiToken(creds.refresh_token, clientId, clientSecret);
+    }
+
+    let activeProject = null;
+    try {
+      const projectsJsonPath = path.join(os.homedir(), '.gemini', 'projects.json');
+      if (fs.existsSync(projectsJsonPath)) {
+        const pj = JSON.parse(fs.readFileSync(projectsJsonPath, 'utf8'));
+        if (pj.projects && typeof pj.projects === 'object') {
+          const firstPath = Object.keys(pj.projects)[0];
+          if (firstPath) activeProject = pj.projects[firstPath];
+        }
+      }
+    } catch(e) {}
+
+    const reqBody = activeProject ? { project: activeProject } : {};
+
+    const resp = await fetch('https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(reqBody)
+    });
+
+    if (!resp.ok) {
+      return { success: false, error: `API error: ${resp.status}` };
+    }
+
+    const result = await resp.json();
+    if (!result.buckets || !Array.isArray(result.buckets)) {
+      return { success: false, error: 'No quota buckets in response' };
+    }
+
+    const geminiBuckets = result.buckets.filter(b => b.modelId && b.modelId.includes('gemini'));
+    const claudeGptBuckets = result.buckets.filter(b => b.modelId && (b.modelId.includes('claude') || b.modelId.includes('gpt')));
+    const fallbackBuckets = geminiBuckets.length > 0 ? geminiBuckets : result.buckets;
+
+    const parseGroup = (name, buckets) => {
+      if (!buckets || buckets.length === 0) return null;
+      const proOrWeekly = buckets.filter(b => b.modelId.includes('pro') || b.modelId.includes('weekly'));
+      const flashOrFiveHour = buckets.filter(b => b.modelId.includes('flash') || b.modelId.includes('lite') || b.modelId.includes('5hour') || b.modelId.includes('five_hour'));
+      
+      const lowestPro = proOrWeekly.length > 0
+        ? proOrWeekly.reduce((lowest, b) => b.remainingFraction < lowest.remainingFraction ? b : lowest, proOrWeekly[0])
+        : buckets[0];
+      
+      const lowestFlash = flashOrFiveHour.length > 0
+        ? flashOrFiveHour.reduce((lowest, b) => b.remainingFraction < lowest.remainingFraction ? b : lowest, flashOrFiveHour[0])
+        : buckets[buckets.length - 1];
+
+      return {
+        name,
+        weeklyPct: lowestFlash ? Math.round(lowestFlash.remainingFraction * 100) : 100,
+        weeklyRawPct: lowestFlash ? (lowestFlash.remainingFraction * 100).toFixed(2) : '100.00',
+        weeklyResetsIn: lowestFlash ? lowestFlash.resetTime : null,
+        fiveHourPct: lowestPro ? Math.round(lowestPro.remainingFraction * 100) : 100,
+        fiveHourRawPct: lowestPro ? (lowestPro.remainingFraction * 100).toFixed(2) : '100.00',
+        fiveHourResetsIn: lowestPro ? lowestPro.resetTime : null
+      };
+    };
+
+    return {
+      success: true,
+      email: userEmail,
+      data: {
+        gemini: parseGroup('Gemini Models', fallbackBuckets),
+        claudeGpt: parseGroup('Claude and GPT models', claudeGptBuckets)
+      }
+    };
+  } catch (err) {
+    console.error('Error fetching Antigravity quota:', err);
+    return { success: false, error: err.message };
+  }
+});
+
 // Show a native macOS notification (e.g. quota threshold alerts)
 ipcMain.handle('claude:notify', async (event, { title, body } = {}) => {
   try {

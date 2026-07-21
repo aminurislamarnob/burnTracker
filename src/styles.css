@@ -222,6 +222,12 @@ body {
   box-shadow: 0 0 8px var(--accent-color);
 }
 
+.progress-bar-fill.green,
+.progress-bar-fill.success {
+  background: linear-gradient(90deg, var(--success-color) 0%, #30d158 100%);
+  box-shadow: 0 0 8px var(--success-color);
+}
+
 .progress-bar-fill.weekly {
   background: linear-gradient(90deg, var(--info-color) 0%, #30b0ff 100%);
   box-shadow: 0 0 8px var(--info-color);
@@ -586,4 +592,81 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.15);
+}
+
+/* --- Messaging UI --- */
+.messaging-container {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 12px;
+}
+
+.messaging-input {
+  width: 100%;
+  background-color: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  resize: vertical;
+  min-height: 38px;
+  max-height: 100px;
+  outline: none;
+  transition: all var(--transition-speed) ease;
+}
+
+.messaging-input:focus {
+  outline: none;
+  border-color: var(--accent-hover);
+  background: var(--bg-surface);
+}
+
+/* --- Antigravity UI --- */
+.ag-quota-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.ag-quota-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.ag-quota-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.ag-quota-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.ag-quota-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ag-quota-pct {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.btn-start-session {
+  width: 100%;
+  font-size: 13px;
+  padding: 8px 14px;
 }

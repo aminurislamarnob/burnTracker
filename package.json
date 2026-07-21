@@ -11,7 +11,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "marked": "^12.0.0"
+    "marked": "^12.0.0",
+    "puppeteer-core": "^24.43.1"
   },
   "devDependencies": {
     "electron": "^31.0.0",

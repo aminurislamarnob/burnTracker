@@ -1,7 +1,7 @@
-// State variables for Minimal Multi-Account Quota Widget
 let appState = {
   activeView: 'dashboard', // 'dashboard' or 'settings'
   accounts: [],            // List of { id, label, sessionKey, quotaData: null, lastFetchTime: 0, status: 'offline' }
+  agAccount: null,         // Antigravity account { token, email, quotaData, status }
   globalStatus: 'offline', // 'offline', 'syncing', 'online', 'warning', 'error'
   refreshMinutes: 15,      // Background auto-refresh interval in minutes
   alertThreshold: 80       // Session usage % that triggers a notification (0 = off)
@@ -109,6 +109,10 @@ async function loadAllData() {
       appState.accounts = [];
     }
 
+    if (trackerSettings.agAccount) {
+      appState.agAccount = trackerSettings.agAccount;
+    }
+
     if (trackerSettings.refreshMinutes) {
       appState.refreshMinutes = trackerSettings.refreshMinutes;
     }
@@ -120,9 +124,15 @@ async function loadAllData() {
 
     renderAccountsGrid();
     renderSettingsAccountsList();
+    renderAgAccountSettings();
+    renderAntigravityGrid();
 
     // Trigger parallel quota fetch if accounts exist
-    if (appState.accounts.length > 0) {
+    let hasWork = false;
+    if (appState.accounts.length > 0) hasWork = true;
+    if (appState.agAccount) hasWork = true;
+    
+    if (hasWork) {
       refreshAllAccounts();
     } else {
       updateGlobalStatus();
@@ -135,7 +145,7 @@ async function loadAllData() {
 
 // Refresh all accounts in parallel
 async function refreshAllAccounts() {
-  if (appState.accounts.length === 0) return;
+  if (appState.accounts.length === 0 && !appState.agAccount) return;
 
   // Restart auto-refresh interval timer to avoid double updates
   startAutoRefresh();
@@ -148,8 +158,17 @@ async function refreshAllAccounts() {
     acc.status = 'syncing';
     updateAccountCardUI(acc);
   });
+  
+  if (appState.agAccount) {
+    appState.agAccount.status = 'syncing';
+    renderAntigravityGrid();
+  }
 
   const fetchPromises = appState.accounts.map(acc => fetchAccountQuota(acc));
+  if (appState.agAccount) {
+    fetchPromises.push(fetchAntigravityQuota());
+  }
+  
   await Promise.all(fetchPromises);
 
   // Update global status based on aggregate results
@@ -163,6 +182,14 @@ async function refreshAllAccounts() {
       allSuccess = false;
     }
   });
+  
+  if (appState.agAccount) {
+    if (appState.agAccount.status === 'online') {
+      anySuccess = true;
+    } else {
+      allSuccess = false;
+    }
+  }
 
   if (allSuccess) {
     appState.globalStatus = 'online';
@@ -230,6 +257,23 @@ async function fetchAccountQuota(account) {
     account.errorMsg = e.message;
   }
   updateAccountCardUI(account);
+}
+
+// Fetch Antigravity Quota
+async function fetchAntigravityQuota() {
+  if (!appState.agAccount || !appState.agAccount.token) return;
+  try {
+    const result = await window.claudeAPI.antigravityFetchQuota(appState.agAccount.token);
+    if (result && result.success && result.data) {
+      appState.agAccount.quotaData = result.data;
+      appState.agAccount.status = 'online';
+    } else {
+      appState.agAccount.status = 'error';
+    }
+  } catch(e) {
+    appState.agAccount.status = 'error';
+  }
+  renderAntigravityGrid();
 }
 
 // Setup Account Form submission & Key management
@@ -312,8 +356,14 @@ async function saveAccountsToDisk() {
     sessionKey: acc.sessionKey
   }));
   
+  let agAccountToSave = null;
+  if (appState.agAccount) {
+    agAccountToSave = { token: appState.agAccount.token, email: appState.agAccount.email };
+  }
+  
   const result = await window.claudeAPI.saveTrackerSettings({
     accounts: accountsToSave,
+    agAccount: agAccountToSave,
     refreshMinutes: appState.refreshMinutes,
     alertThreshold: appState.alertThreshold
   });
@@ -449,6 +499,46 @@ function renderAccountsGrid() {
           <div class="quota-footer-row">${weeklyResetsAt ? 'Resets ' + formatTimeUntil(weeklyResetsAt) : 'Resets weekly'}</div>
         </div>
       `;
+
+      // Messaging UI: Only show if no session is currently running (sessionPct === 0)
+      if (sessionPct === 0) {
+        const messagingContainer = document.createElement('div');
+        messagingContainer.className = 'messaging-container';
+        
+        const input = document.createElement('textarea');
+        input.className = 'messaging-input';
+        input.placeholder = 'Message Claude...';
+        input.rows = 1;
+        
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-primary btn-start-session';
+        btn.textContent = 'Start session now';
+        
+        btn.addEventListener('click', () => {
+          const prompt = input.value.trim();
+          if (!prompt) return;
+          btn.textContent = 'Starting...';
+          btn.disabled = true;
+          
+          if (window.claudeAPI && typeof window.claudeAPI.startSession === 'function') {
+            window.claudeAPI.startSession(acc.id, acc.sessionKey, prompt)
+              .then(res => {
+                btn.textContent = 'Start session now';
+                btn.disabled = false;
+                input.value = '';
+              })
+              .catch(err => {
+                console.error('Failed to start session', err);
+                btn.textContent = 'Start session now';
+                btn.disabled = false;
+              });
+          }
+        });
+        
+        messagingContainer.appendChild(input);
+        messagingContainer.appendChild(btn);
+        body.appendChild(messagingContainer);
+      }
     }
 
     card.appendChild(body);
@@ -701,4 +791,257 @@ function formatTimeUntil(isoString) {
   } catch (e) {
     return 'soon';
   }
+}
+
+// Fetch Antigravity Quota
+async function fetchAntigravityQuota() {
+  if (!appState.agAccount || !appState.agAccount.token) return;
+  try {
+    const result = await window.claudeAPI.antigravityFetchQuota(appState.agAccount.token);
+    if (result && result.success && result.data) {
+      appState.agAccount.quotaData = result.data;
+      if (result.email) {
+        appState.agAccount.email = result.email;
+      }
+      appState.agAccount.status = 'online';
+    } else {
+      appState.agAccount.status = 'error';
+    }
+  } catch(e) {
+    appState.agAccount.status = 'error';
+  }
+  renderAgAccountSettings();
+  renderAntigravityGrid();
+}
+
+// Setup Account Form submission & Key management
+function setupFormHandlers() {
+  const refreshSelect = document.getElementById('refresh-interval');
+  if (refreshSelect) {
+    refreshSelect.addEventListener('change', async (e) => {
+      const minutes = parseInt(e.target.value, 10);
+      if (!minutes || minutes <= 0) return;
+      appState.refreshMinutes = minutes;
+      await saveAccountsToDisk();
+      startAutoRefresh();
+    });
+  }
+
+  const alertSelect = document.getElementById('alert-threshold');
+  if (alertSelect) {
+    alertSelect.addEventListener('change', async (e) => {
+      appState.alertThreshold = parseInt(e.target.value, 10) || 0;
+      await saveAccountsToDisk();
+    });
+  }
+
+  const addAccountForm = document.getElementById('add-account-form');
+  if (addAccountForm) {
+    addAccountForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const labelInput = document.getElementById('account-label');
+      const keyInput = document.getElementById('account-session-key');
+
+      const label = labelInput.value.trim();
+      const sessionKey = keyInput.value.trim();
+
+      if (!label || !sessionKey) return;
+
+      const newAccount = {
+        id: 'acc_' + Date.now(),
+        label,
+        sessionKey,
+        quotaData: null,
+        lastFetchTime: 0,
+        status: 'offline'
+      };
+
+      appState.accounts.push(newAccount);
+      await saveAccountsToDisk();
+
+      labelInput.value = '';
+      keyInput.value = '';
+
+      renderAccountsGrid();
+      renderSettingsAccountsList();
+      fetchAccountQuota(newAccount);
+    });
+  }
+}
+
+function renderAgAccountSettings() {
+  const infoDiv = document.getElementById('ag-account-info');
+  const loginBtn = document.getElementById('btn-ag-login');
+  const logoutBtn = document.getElementById('btn-ag-logout');
+  
+  if (!infoDiv || !loginBtn || !logoutBtn) return;
+
+  if (appState.agAccount) {
+    infoDiv.textContent = `CLI Linked (${appState.agAccount.email || 'eng.aminurislam@gmail.com'})`;
+    loginBtn.classList.add('hidden');
+    logoutBtn.classList.remove('hidden');
+  } else {
+    infoDiv.textContent = 'Not linked.';
+    loginBtn.classList.remove('hidden');
+    logoutBtn.classList.add('hidden');
+  }
+
+  // Setup listeners if not already
+  if (!loginBtn.dataset.initialized) {
+    loginBtn.dataset.initialized = 'true';
+    
+    loginBtn.addEventListener('click', async () => {
+      loginBtn.textContent = 'Syncing...';
+      loginBtn.disabled = true;
+      try {
+        const res = await window.claudeAPI.antigravityLogin();
+        if (res.success) {
+          appState.agAccount = { token: res.token, email: res.email, status: 'syncing' };
+          await saveAccountsToDisk();
+          renderAgAccountSettings();
+          await fetchAntigravityQuota();
+          updateGlobalStatus();
+        } else {
+          alert('Sync failed: ' + res.error);
+        }
+      } catch (e) {
+        console.error(e);
+        alert('Sync error.');
+      }
+      loginBtn.textContent = 'Sync with Antigravity / Gemini CLI';
+      loginBtn.disabled = false;
+    });
+
+    logoutBtn.addEventListener('click', async () => {
+      appState.agAccount = null;
+      await saveAccountsToDisk();
+      renderAgAccountSettings();
+      renderAntigravityGrid();
+      updateGlobalStatus();
+    });
+  }
+}
+
+function renderAntigravityGrid() {
+  const container = document.getElementById('antigravity-container');
+  if (!container) return;
+
+  if (!appState.agAccount) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const ag = appState.agAccount;
+  const isSyncing = ag.status === 'syncing';
+  const isError = ag.status === 'error';
+
+  const card = document.createElement('div');
+  card.className = 'account-card';
+  card.id = 'card-antigravity';
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'account-card-header';
+
+  const info = document.createElement('div');
+  info.className = 'account-info';
+
+  const dot = document.createElement('span');
+  dot.className = `pulse-dot ${isError ? 'error' : isSyncing ? 'warning' : 'online'}`;
+
+  const name = document.createElement('span');
+  name.className = 'account-name';
+  name.textContent = 'Antigravity / Gemini CLI';
+
+  const emailSpan = document.createElement('span');
+  emailSpan.className = 'account-email';
+  emailSpan.style.cssText = 'font-size: 11px; color: var(--text-muted); margin-left: 6px;';
+  emailSpan.textContent = ag.email || 'eng.aminurislam@gmail.com';
+
+  info.appendChild(dot);
+  info.appendChild(name);
+  info.appendChild(emailSpan);
+
+  const refreshBtn = document.createElement('button');
+  refreshBtn.className = 'btn-icon';
+  refreshBtn.title = 'Refresh Antigravity Quota';
+  refreshBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
+  refreshBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    ag.status = 'syncing';
+    renderAntigravityGrid();
+    await fetchAntigravityQuota();
+    updateGlobalStatus();
+  });
+
+  header.appendChild(info);
+  header.appendChild(refreshBtn);
+  card.appendChild(header);
+
+  // Body
+  const body = document.createElement('div');
+  body.className = 'account-card-body';
+
+  if (isError) {
+    body.innerHTML = `
+      <div style="color: var(--error-color); font-size: 12px; text-align: center; padding: 10px 0;">
+        Sync Failed: Could not fetch local Antigravity CLI quota
+      </div>
+    `;
+  } else if (isSyncing && !ag.quotaData) {
+    body.innerHTML = `
+      <div style="color: var(--text-dimmed); font-size: 12px; text-align: center; padding: 10px 0;">
+        Syncing Antigravity quotas...
+      </div>
+    `;
+  } else if (ag.quotaData) {
+    const d = ag.quotaData;
+    let itemsHtml = '';
+
+    const getBarClass = (pct) => {
+      if (pct <= 20) return 'danger';
+      if (pct <= 50) return 'warning';
+      return 'green';
+    };
+
+    const renderQuotaItem = (groupTitle, limitTitle, pct, rawPct, resetsIn) => {
+      const barClass = getBarClass(pct);
+      const resetText = resetsIn ? 'Refreshes ' + formatTimeUntil(resetsIn) : 'Quota available';
+      const descText = pct === 100 ? '100% remaining' : `${rawPct || pct}% remaining`;
+
+      return `
+        <div class="quota-item" style="margin-bottom: 12px;">
+          <div class="quota-header-row">
+            <span class="quota-title">${groupTitle} — ${limitTitle}</span>
+            <span class="quota-desc">${descText}</span>
+          </div>
+          <div class="progress-bar-container">
+            <div class="progress-bar-fill ${barClass}" style="width: ${pct}%;"></div>
+          </div>
+          <div class="quota-footer-row">${resetText}</div>
+        </div>
+      `;
+    };
+
+    if (d.gemini) {
+      const descLine = d.gemini.description ? `<div style="font-size: 11px; font-weight: 600; color: var(--accent-hover); margin-bottom: 8px;">${d.gemini.name || 'Gemini Models'} <span style="font-weight: normal; color: var(--text-dimmed);">(${d.gemini.description})</span></div>` : `<div style="font-size: 11px; font-weight: 600; color: var(--accent-hover); margin-bottom: 8px;">${d.gemini.name || 'Gemini Models'}</div>`;
+      itemsHtml += descLine;
+      itemsHtml += renderQuotaItem('Gemini', 'Weekly Limit', d.gemini.weeklyPct, d.gemini.weeklyRawPct, d.gemini.weeklyResetsIn);
+      itemsHtml += renderQuotaItem('Gemini', 'Five Hour Limit', d.gemini.fiveHourPct, d.gemini.fiveHourRawPct, d.gemini.fiveHourResetsIn);
+    }
+
+    if (d.claudeGpt) {
+      if (itemsHtml) itemsHtml += `<div style="height: 1px; background: var(--border-color); margin: 12px 0;"></div>`;
+      const descLine = d.claudeGpt.description ? `<div style="font-size: 11px; font-weight: 600; color: var(--accent-hover); margin-bottom: 8px;">${d.claudeGpt.name || 'Claude & GPT Models'} <span style="font-weight: normal; color: var(--text-dimmed);">(${d.claudeGpt.description})</span></div>` : `<div style="font-size: 11px; font-weight: 600; color: var(--accent-hover); margin-bottom: 8px;">${d.claudeGpt.name || 'Claude & GPT Models'}</div>`;
+      itemsHtml += descLine;
+      itemsHtml += renderQuotaItem('Claude & GPT', 'Weekly Limit', d.claudeGpt.weeklyPct, d.claudeGpt.weeklyRawPct, d.claudeGpt.weeklyResetsIn);
+      itemsHtml += renderQuotaItem('Claude & GPT', 'Five Hour Limit', d.claudeGpt.fiveHourPct, d.claudeGpt.fiveHourRawPct, d.claudeGpt.fiveHourResetsIn);
+    }
+
+    body.innerHTML = itemsHtml || '<div style="color: var(--text-dimmed); font-size: 12px; text-align: center; padding: 10px 0;">No quota data available</div>';
+  }
+
+  card.appendChild(body);
+  container.innerHTML = '';
+  container.appendChild(card);
 }

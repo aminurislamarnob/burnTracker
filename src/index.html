@@ -72,6 +72,11 @@
     <main class="widget-content">
       <!-- DASHBOARD VIEW -->
       <section id="dashboard-view" class="view-panel active">
+        <!-- Antigravity Quotas Grid -->
+        <div id="antigravity-container" class="accounts-grid" style="margin-bottom: 16px;">
+          <!-- Antigravity Mock Quotas will be generated here -->
+        </div>
+
         <!-- Accounts Grid -->
         <div id="accounts-container" class="accounts-grid">
           <!-- Dynamic Account Cards will be generated here -->
@@ -148,6 +153,16 @@
             </div>
             <button type="submit" class="btn btn-primary w-100">Add Account</button>
           </form>
+        </div>
+
+        <div class="settings-card mt-15">
+          <h3>Antigravity / Gemini CLI Account</h3>
+          <div class="form-group">
+            <span class="settings-desc">Link your local Antigravity or Gemini CLI to track real usage quotas.</span>
+          </div>
+          <div id="ag-account-info" style="margin-bottom: 12px; font-size: 13px; font-weight: 600;"></div>
+          <button id="btn-ag-login" type="button" class="btn btn-primary w-100">Sync with Antigravity / Gemini CLI</button>
+          <button id="btn-ag-logout" type="button" class="btn btn-secondary w-100 hidden mt-10">Remove Account</button>
         </div>
 
         <div class="settings-card mt-15">
