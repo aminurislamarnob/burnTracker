@@ -353,53 +353,59 @@ ipcMain.handle('claude:startSession', async (event, { accountId, sessionKey, pro
     });
 
     // Handle when the page loads
-    chatWin.webContents.on('did-finish-load', () => {
-      // Inject script to find editor, paste text natively, and send
-      const script = `
-        (function() {
-          let attempts = 0;
-          function waitForEditor() {
-            attempts++;
-            const editor = document.querySelector('div[contenteditable="true"], .ProseMirror');
-            if (!editor) {
-              if (attempts < 50) setTimeout(waitForEditor, 200);
-              return;
-            }
-            
-            // Focus and insert text using a paste event (safest for ProseMirror)
-            editor.focus();
-            const dataTransfer = new DataTransfer();
-            dataTransfer.setData('text/plain', ${JSON.stringify(prompt)});
-            const pasteEvent = new ClipboardEvent('paste', {
-              clipboardData: dataTransfer,
-              bubbles: true,
-              cancelable: true
-            });
-            editor.dispatchEvent(pasteEvent);
-            
-            // Wait a moment for ProseMirror state to update, then click send
-            setTimeout(() => {
-              const sendBtn = document.querySelector('button[aria-label="Send Message"]');
-              if (sendBtn && !sendBtn.disabled) {
-                sendBtn.click();
+    chatWin.webContents.on('did-finish-load', async () => {
+      try {
+        // 1. Wait for and focus the editor
+        const found = await chatWin.webContents.executeJavaScript(`
+          new Promise((resolve) => {
+            let attempts = 0;
+            function tryFocus() {
+              attempts++;
+              const editor = document.querySelector('div[contenteditable="true"], .ProseMirror');
+              if (editor) {
+                editor.focus();
+                resolve(true);
+              } else if (attempts < 50) {
+                setTimeout(tryFocus, 200);
               } else {
-                // Fallback: Dispatch Enter key event
+                resolve(false);
+              }
+            }
+            setTimeout(tryFocus, 500);
+          });
+        `);
+
+        if (!found) {
+          console.error('Could not find Claude editor element');
+          return;
+        }
+
+        // 2. Insert text using native Electron API (bypasses React/ProseMirror event blocking)
+        await chatWin.webContents.insertText(prompt);
+
+        // Wait a brief moment for React state to acknowledge the text insertion
+        await new Promise(r => setTimeout(r, 600));
+
+        // 3. Click the send button or dispatch Enter
+        await chatWin.webContents.executeJavaScript(`
+          (function() {
+            const sendBtn = document.querySelector('button[aria-label="Send Message"]');
+            if (sendBtn && !sendBtn.disabled) {
+              sendBtn.click();
+            } else {
+              const editor = document.querySelector('div[contenteditable="true"], .ProseMirror');
+              if (editor) {
                 const enterEvent = new KeyboardEvent('keydown', {
-                  key: 'Enter',
-                  code: 'Enter',
-                  keyCode: 13,
-                  which: 13,
-                  bubbles: true,
-                  cancelable: true
+                  key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
                 });
                 editor.dispatchEvent(enterEvent);
               }
-            }, 600);
-          }
-          setTimeout(waitForEditor, 500);
-        })();
-      `;
-      chatWin.webContents.executeJavaScript(script);
+            }
+          })();
+        `);
+      } catch (err) {
+        console.error('Failed to automate session:', err);
+      }
     });
 
     await chatWin.loadURL('https://claude.ai/new');
