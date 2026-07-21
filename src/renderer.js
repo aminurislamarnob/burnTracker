@@ -386,7 +386,7 @@ function syncAlertThresholdSelect() {
 function renderAccountsGrid() {
   const container = document.getElementById('accounts-container');
   const emptyState = document.getElementById('dashboard-empty-state');
-  
+
   if (!container || !emptyState) return;
 
   if (appState.accounts.length === 0) {
@@ -398,61 +398,93 @@ function renderAccountsGrid() {
   emptyState.classList.add('hidden');
   container.innerHTML = '';
 
-  appState.accounts.forEach(acc => {
-    const card = document.createElement('div');
-    card.className = 'account-card';
-    card.id = `card-${acc.id}`;
-    
-    // Card Header
-    const header = document.createElement('div');
-    header.className = 'account-card-header';
-    
-    const info = document.createElement('div');
-    info.className = 'account-info';
-    
-    const dot = document.createElement('span');
-    dot.className = `pulse-dot ${acc.status === 'error' ? 'error' : acc.status === 'syncing' ? 'warning' : 'online'}`;
-    
-    const name = document.createElement('span');
-    name.className = 'account-name';
-    name.textContent = acc.label;
+  const card = document.createElement('div');
+  card.className = 'account-card';
+  card.id = 'card-claude-accounts';
 
-    info.appendChild(dot);
-    info.appendChild(name);
+  // Card Header
+  const header = document.createElement('div');
+  header.className = 'account-card-header';
+  
+  const info = document.createElement('div');
+  info.className = 'account-info';
+  
+  let aggStatus = 'online';
+  if (appState.accounts.some(a => a.status === 'error')) aggStatus = 'error';
+  else if (appState.accounts.some(a => a.status === 'syncing')) aggStatus = 'warning';
+
+  const dot = document.createElement('span');
+  dot.className = `pulse-dot ${aggStatus}`;
+  
+  const name = document.createElement('span');
+  name.className = 'account-name';
+  name.textContent = 'Claude.ai Accounts';
+
+  info.appendChild(dot);
+  info.appendChild(name);
+  
+  const refreshBtn = document.createElement('button');
+  refreshBtn.className = 'btn-icon';
+  refreshBtn.title = 'Refresh All Claude Accounts';
+  refreshBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
+  refreshBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    refreshAllAccounts();
+  });
+
+  header.appendChild(info);
+  header.appendChild(refreshBtn);
+  card.appendChild(header);
+
+  // Card Body
+  const mainBody = document.createElement('div');
+  mainBody.className = 'account-card-body';
+
+  appState.accounts.forEach((acc, index) => {
+    if (index > 0) {
+      const divider = document.createElement('div');
+      divider.style.cssText = 'height: 1px; background: var(--border-color); margin: 16px 0;';
+      mainBody.appendChild(divider);
+    }
+
+    const section = document.createElement('div');
+    section.id = `account-section-${acc.id}`;
+
+    const accHeader = document.createElement('div');
+    accHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;';
     
-    const refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn-icon';
-    refreshBtn.title = 'Refresh Account';
-    refreshBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
-    refreshBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
+    accHeader.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="pulse-dot ${acc.status === 'error' ? 'error' : acc.status === 'syncing' ? 'warning' : 'online'}"></span>
+        <span style="font-size: 11px; font-weight: 600; color: var(--accent-hover);">${acc.label}</span>
+      </div>
+    `;
+
+    const accRefreshBtn = document.createElement('button');
+    accRefreshBtn.className = 'btn-icon';
+    accRefreshBtn.style.padding = '2px';
+    accRefreshBtn.title = 'Refresh Account';
+    accRefreshBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
+    accRefreshBtn.onclick = async () => {
       acc.status = 'syncing';
       updateAccountCardUI(acc);
       await fetchAccountQuota(acc);
       renderAccountsGrid();
       updateGlobalStatus();
-    });
-
-    header.appendChild(info);
-    header.appendChild(refreshBtn);
-    card.appendChild(header);
-
-    // Card Body
-    const body = document.createElement('div');
-    body.className = 'account-card-body';
+    };
+    accHeader.appendChild(accRefreshBtn);
+    section.appendChild(accHeader);
 
     if (acc.status === 'error') {
-      body.innerHTML = `
-        <div style="color: var(--error-color); font-size: 12px; text-align: center; padding: 10px 0; line-height: 1.4;">
-          <strong>Sync Failed:</strong><br>${acc.errorMsg || 'Unauthorized / Invalid Key'}
-        </div>
-      `;
+      const errDiv = document.createElement('div');
+      errDiv.style.cssText = 'color: var(--error-color); font-size: 12px; text-align: center; padding: 10px 0; line-height: 1.4;';
+      errDiv.innerHTML = `<strong>Sync Failed:</strong><br>${acc.errorMsg || 'Unauthorized / Invalid Key'}`;
+      section.appendChild(errDiv);
     } else if (acc.status === 'syncing' && !acc.quotaData) {
-      body.innerHTML = `
-        <div style="color: var(--text-dimmed); font-size: 12px; text-align: center; padding: 10px 0;">
-          Syncing quotas...
-        </div>
-      `;
+      const syncDiv = document.createElement('div');
+      syncDiv.style.cssText = 'color: var(--text-dimmed); font-size: 12px; text-align: center; padding: 10px 0;';
+      syncDiv.textContent = 'Syncing quotas...';
+      section.appendChild(syncDiv);
     } else {
       const q = acc.quotaData || {};
       
@@ -474,9 +506,10 @@ function renderAccountsGrid() {
       const sessionBarClass = sessionPct >= 95 ? 'danger' : sessionPct >= 80 ? 'warning' : '';
       const weeklyBarClass = weeklyPct >= 95 ? 'danger' : weeklyPct >= 80 ? 'warning' : 'weekly';
 
-      body.innerHTML = `
+      const statsDiv = document.createElement('div');
+      statsDiv.innerHTML = `
         <!-- Session Limits -->
-        <div class="quota-item">
+        <div class="quota-item" style="margin-bottom: 24px;">
           <div class="quota-header-row">
             <span class="quota-title">Current Session (5h Window)</span>
             <span class="quota-desc">${sessionPct}% used</span>
@@ -499,6 +532,7 @@ function renderAccountsGrid() {
           <div class="quota-footer-row">${weeklyResetsAt ? 'Resets ' + formatTimeUntil(weeklyResetsAt) : 'Resets weekly'}</div>
         </div>
       `;
+      section.appendChild(statsDiv);
 
       // Messaging UI: Only show if no session is currently running (sessionPct === 0)
       if (sessionPct === 0) {
@@ -537,13 +571,15 @@ function renderAccountsGrid() {
         
         messagingContainer.appendChild(input);
         messagingContainer.appendChild(btn);
-        body.appendChild(messagingContainer);
+        section.appendChild(messagingContainer);
       }
     }
 
-    card.appendChild(body);
-    container.appendChild(card);
+    mainBody.appendChild(section);
   });
+
+  card.appendChild(mainBody);
+  container.appendChild(card);
 }
 
 // ID of the account currently being edited inline, or null
@@ -727,9 +763,9 @@ function buildAccountEditRow(row, acc) {
 
 // Update card status dot instantly
 function updateAccountCardUI(acc) {
-  const card = document.getElementById(`card-${acc.id}`);
-  if (!card) return;
-  const dot = card.querySelector('.pulse-dot');
+  const section = document.getElementById(`account-section-${acc.id}`);
+  if (!section) return;
+  const dot = section.querySelector('.pulse-dot');
   if (dot) {
     dot.className = `pulse-dot ${acc.status === 'error' ? 'error' : acc.status === 'syncing' ? 'warning' : 'online'}`;
   }
@@ -1010,7 +1046,7 @@ function renderAntigravityGrid() {
       const descText = pct === 100 ? '100% remaining' : `${rawPct || pct}% remaining`;
 
       return `
-        <div class="quota-item" style="margin-bottom: 12px;">
+        <div class="quota-item" style="margin-bottom: 24px;">
           <div class="quota-header-row">
             <span class="quota-title">${groupTitle} — ${limitTitle}</span>
             <span class="quota-desc">${descText}</span>
