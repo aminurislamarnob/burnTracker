@@ -5,6 +5,19 @@ A beautiful, lightweight, and modern macOS menu-bar utility built natively in **
 ![macOS Status Bar Integration](https://img.shields.io/badge/Platform-macOS%2013%2B-orange?style=flat-square&logo=apple)
 ![Swift](https://img.shields.io/badge/Swift-5-orange?style=flat-square&logo=swift)
 ![SwiftUI](https://img.shields.io/badge/UI-SwiftUI-blue?style=flat-square&logo=swift)
+[![Latest Release](https://img.shields.io/github/v/release/aminurislamarnob/burnTracker?style=flat-square&label=Download&color=cc5c3c)](https://github.com/aminurislamarnob/burnTracker/releases/latest)
+
+---
+
+## Download 📥
+
+Grab the latest signed disk image from the [**Releases**](https://github.com/aminurislamarnob/burnTracker/releases/latest) page:
+
+1. Download `BurnTracker-<version>.dmg` (e.g. [`BurnTracker-2.2.0.dmg`](https://github.com/aminurislamarnob/burnTracker/releases/download/v2.2.0/BurnTracker-2.2.0.dmg)).
+2. Open the `.dmg` and drag **BurnTracker** into your **Applications** folder.
+3. On first launch, right-click the app → **Open** → **Open anyway** (the app is signed to run locally, so macOS Gatekeeper shows a verification warning on a distributed build).
+
+Requires macOS 13.0 (Ventura) or newer. Prefer to build it yourself? See [Building & Running](#building--running-).
 
 ---
 
