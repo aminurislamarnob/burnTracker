@@ -83,8 +83,10 @@ struct ClaudeAccountCardView: View {
                 rightText: quota?.weeklyResetsAt != nil
                     ? "Resets \(TimeFormat.compactReset(quota?.weeklyResetsAt))" : "Resets weekly")
 
-            // Start-session button only when no session is currently running.
-            if sessionPct == 0 {
+            // Start-session button only when no session window is active — i.e.
+            // there's no session reset time ("Resets periodically"). A live
+            // "Resets in …" means a session is already running.
+            if quota?.sessionResetsAt == nil {
                 startButton
             }
         }
