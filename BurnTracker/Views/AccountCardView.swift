@@ -83,6 +83,18 @@ struct ClaudeAccountCardView: View {
                 rightText: quota?.weeklyResetsAt != nil
                     ? "Resets \(TimeFormat.compactReset(quota?.weeklyResetsAt))" : "Resets weekly")
 
+            // Purchased-credit ("extra usage") bar — Claude only, and only when
+            // the account has an active extra-usage budget.
+            if let extra = quota?.extraUsage, extra.isEnabled {
+                let creditPct = extra.utilizationPct
+                CompactQuotaRow(
+                    title: "Purchased Credits",
+                    percent: creditPct,
+                    tint: usedTint(creditPct, base: Theme.creditTint),
+                    leftText: extra.amountLabel ?? "\(creditPct)% used",
+                    rightText: extra.spendLimitReached ? "Limit reached" : "Monthly")
+            }
+
             // Start-session button only when no session window is active — i.e.
             // there's no session reset time ("Resets periodically"). A live
             // "Resets in …" means a session is already running.

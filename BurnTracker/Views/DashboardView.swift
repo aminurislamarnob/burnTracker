@@ -12,6 +12,17 @@ struct DashboardView: View {
                 ForEach(app.accounts) { account in
                     ClaudeAccountCardView(account: account)
                 }
+                // Shared local Claude Code usage trend (machine-wide; not
+                // attributable per web account), shown once below the accounts.
+                if !app.accounts.isEmpty,
+                   let trend = app.claudeUsageTrend, !trend.days.isEmpty {
+                    Card {
+                        UsageTrendSection(
+                            trend: trend,
+                            tint: Theme.accent,
+                            title: "Claude Usage Trend")
+                    }
+                }
                 // Each CLI provider in its own card.
                 if let gemini = app.geminiAccount {
                     CliQuotaCardView(

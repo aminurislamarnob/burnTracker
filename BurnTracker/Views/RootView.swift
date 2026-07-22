@@ -38,7 +38,12 @@ struct RootView: View {
             footer
         }
         .frame(width: 400)
-        .background(Theme.bg)
+        .background {
+            // Native macOS vibrancy behind the whole popover, with a slight dark
+            // tint over it so content stays legible on bright desktops.
+            VisualEffectView(material: .hudWindow, blending: .behindWindow)
+                .overlay(Theme.windowTint)
+        }
         .environment(\.colorScheme, .dark)
         .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
     }

@@ -118,15 +118,25 @@ struct ProviderIconBadge: View {
     }
 }
 
-/// A card container with the surface background and border.
+/// A frosted-glass card container: a within-window vibrancy material tinted with
+/// a faint white lift, a bright hairline stroke, and a soft drop shadow so it
+/// floats above the popover's window glass (CodexBar-style).
 struct Card<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 0) { content }
             .padding(16)
-            .background(Theme.card)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border, lineWidth: 1))
+            .background {
+                ZStack {
+                    VisualEffectView(material: .menu, blending: .withinWindow)
+                    Theme.cardGlass
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Theme.glassBorder, lineWidth: 1))
+            .shadow(color: .black.opacity(0.25), radius: 8, x: 0, y: 4)
     }
 }
 
@@ -170,9 +180,9 @@ struct SecondaryButtonStyle: ButtonStyle {
             .foregroundColor(Theme.textMain)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
-            .background(configuration.isPressed ? Theme.cardHover : Theme.surface)
+            .background(configuration.isPressed ? Theme.cardGlassHover : Theme.cardGlass)
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.glassBorder, lineWidth: 1))
     }
 }
 
@@ -202,10 +212,10 @@ struct IconActionButtonStyle: ButtonStyle {
             .background(
                 danger
                     ? Theme.error.opacity(pressed ? 0.22 : 0.1)
-                    : (pressed ? Theme.cardHover : Theme.surface))
+                    : (pressed ? Theme.cardGlassHover : Theme.cardGlass))
             .clipShape(RoundedRectangle(cornerRadius: 7))
             .overlay(
                 RoundedRectangle(cornerRadius: 7)
-                    .stroke(danger ? Color.clear : Theme.border, lineWidth: 1))
+                    .stroke(danger ? Color.clear : Theme.glassBorder, lineWidth: 1))
     }
 }

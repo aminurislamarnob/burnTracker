@@ -92,7 +92,7 @@ struct SettingsView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface)
+        .background(Theme.glassInset)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
@@ -244,9 +244,9 @@ private struct AccountSettingsRow: View {
             }
         }
         .padding(10)
-        .background(Theme.surface)
+        .background(Theme.glassInset)
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(editing ? Theme.accent.opacity(0.4) : Theme.border, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(editing ? Theme.accent.opacity(0.4) : Theme.glassBorder, lineWidth: 1))
         .confirmationDialog("Remove account \"\(account.label)\"?",
                             isPresented: $showRemoveConfirm, titleVisibility: .visible) {
             Button("Remove", role: .destructive) { app.removeAccount(id: account.id) }
@@ -370,9 +370,9 @@ struct RevealableSecureField: View {
             .help(revealed ? "Hide key" : "Show key")
         }
         .padding(8)
-        .background(Theme.bg)
+        .background(Theme.glassInset)
         .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.glassBorder, lineWidth: 1))
     }
 }
 
@@ -383,8 +383,8 @@ struct BurnTextFieldStyle: TextFieldStyle {
             .font(.system(size: 12))
             .foregroundColor(Theme.textMain)
             .padding(8)
-            .background(Theme.bg)
+            .background(Theme.glassInset)
             .clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.glassBorder, lineWidth: 1))
     }
 }
