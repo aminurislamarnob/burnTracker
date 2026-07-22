@@ -17,6 +17,8 @@ struct ClaudeAccountCardView: View {
                 detail: account.email ?? account.maskedKey,
                 statusLine: statusLine,
                 subtitle: "Claude.ai",
+                iconName: "ProviderIcon-claude",
+                iconTint: Theme.accent,
                 onRefresh: { Task { await app.refreshAccount(id: account.id) } })
                 .padding(.bottom, 10)
 

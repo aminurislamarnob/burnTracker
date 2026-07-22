@@ -59,11 +59,18 @@ struct CompactCardHeader: View {
     let detail: String?
     let statusLine: String
     let subtitle: String?
+    /// Optional provider glyph (asset name) shown as a tinted badge before the title.
+    var iconName: String? = nil
+    var iconTint: Color = Theme.textMain
     let onRefresh: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if let iconName {
+                    ProviderIconBadge(name: iconName, tint: iconTint)
+                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 4 }
+                }
                 Text(title)
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(Theme.textMain)
@@ -90,6 +97,24 @@ struct CompactCardHeader: View {
                 }
             }
         }
+    }
+}
+
+/// A small tinted provider glyph badge (rounded tile) shown in a card header.
+struct ProviderIconBadge: View {
+    let name: String
+    let tint: Color
+
+    var body: some View {
+        Image(name)
+            .renderingMode(.template)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: 13, height: 13)
+            .foregroundColor(tint)
+            .frame(width: 22, height: 22)
+            .background(tint.opacity(0.14))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }
 

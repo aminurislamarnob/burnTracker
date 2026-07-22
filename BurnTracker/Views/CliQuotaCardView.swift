@@ -8,6 +8,8 @@ struct CliQuotaCardView: View {
     let title: String
     let subtitle: String
     let tint: Color
+    /// Provider glyph asset name shown as a tinted badge in the header.
+    let iconName: String
     let account: CliAccount
     /// Message shown when the fetch fails (source-specific).
     let errorMessage: String
@@ -20,6 +22,8 @@ struct CliQuotaCardView: View {
                 detail: account.email,
                 statusLine: statusLine,
                 subtitle: subtitle,
+                iconName: iconName,
+                iconTint: tint,
                 onRefresh: onRefresh)
                 .padding(.bottom, 10)
 

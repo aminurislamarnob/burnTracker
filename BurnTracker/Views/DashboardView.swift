@@ -18,6 +18,7 @@ struct DashboardView: View {
                         title: "Gemini CLI",
                         subtitle: "Gemini Code Assist",
                         tint: Theme.geminiTint,
+                        iconName: "ProviderIcon-gemini",
                         account: gemini,
                         errorMessage: "Could not fetch Gemini CLI quota",
                         onRefresh: { Task { await app.refreshGemini() } })
@@ -27,6 +28,7 @@ struct DashboardView: View {
                         title: "Antigravity",
                         subtitle: "Antigravity IDE",
                         tint: Theme.antigravityTint,
+                        iconName: "ProviderIcon-antigravity",
                         account: ag,
                         errorMessage: "Could not fetch local Antigravity quota (is the Antigravity app running?)",
                         onRefresh: { Task { await app.refreshAntigravity() } })
