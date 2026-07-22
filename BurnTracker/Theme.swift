@@ -30,6 +30,24 @@ enum Theme {
 
     /// A subtler divider used between compact flat rows.
     static let hairline = Color.white.opacity(0.06)
+
+    // MARK: - Glass (translucent) surfaces
+
+    /// A slight dark tint laid over the behind-window vibrancy so text stays
+    /// legible on top of bright desktops without killing the translucency.
+    static let windowTint = Color(hex: 0x121215).opacity(0.30)
+
+    /// A frosted panel tint layered on the within-window material for cards,
+    /// giving them a faint lift off the window glass.
+    static let cardGlass = Color.white.opacity(0.05)
+    static let cardGlassHover = Color.white.opacity(0.09)
+
+    /// A brighter hairline that reads on top of translucent glass.
+    static let glassBorder = Color.white.opacity(0.12)
+
+    /// A recessed inset (input fields, nested boxes) that reads as darker glass
+    /// within a frosted card.
+    static let glassInset = Color.black.opacity(0.18)
 }
 
 extension Color {
