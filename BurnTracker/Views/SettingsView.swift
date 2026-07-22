@@ -164,8 +164,7 @@ private struct AddAccountForm: View {
                 .textFieldStyle(BurnTextFieldStyle())
 
             FieldLabel("Session Key (sessionKey)")
-            SecureField("Paste sk-ant-sid02-...", text: $key)
-                .textFieldStyle(BurnTextFieldStyle())
+            RevealableSecureField(placeholder: "Paste sk-ant-sid02-...", text: $key)
             Text("Your sessionKey cookie value from claude.ai")
                 .font(.system(size: 10))
                 .foregroundColor(Theme.textDimmed)
@@ -200,11 +199,10 @@ private struct AccountSettingsRow: View {
                 TextField("e.g. Personal, Work, Client A", text: $editLabel)
                     .textFieldStyle(BurnTextFieldStyle())
                 FieldLabel("Session Key (sessionKey)")
-                SecureField("Paste sk-ant-sid02-...", text: $editKey)
-                    .textFieldStyle(BurnTextFieldStyle())
+                RevealableSecureField(placeholder: "Paste sk-ant-sid02-...", text: $editKey)
                 Text("Leave unchanged to keep the existing key.")
                     .font(.system(size: 10)).foregroundColor(Theme.textDimmed)
-                HStack {
+                HStack(spacing: 8) {
                     Button("Save") {
                         let l = editLabel.trimmingCharacters(in: .whitespaces)
                         let k = editKey.trimmingCharacters(in: .whitespaces)
@@ -212,9 +210,9 @@ private struct AccountSettingsRow: View {
                         app.updateAccount(id: account.id, label: l, sessionKey: k)
                         editing = false
                     }
-                    .buttonStyle(PrimaryButtonStyle()).fixedSize()
+                    .buttonStyle(PrimaryButtonStyle())
                     Button("Cancel") { editing = false }
-                        .buttonStyle(SecondaryButtonStyle()).fixedSize()
+                        .buttonStyle(SecondaryButtonStyle())
                 }
             } else {
                 HStack {
@@ -333,6 +331,48 @@ private struct LabeledField<Content: View>: View {
 private struct Divider24: View {
     var body: some View {
         Rectangle().fill(Theme.border).frame(height: 1).padding(.vertical, 12)
+    }
+}
+
+/// A masked key field with an eye toggle to reveal/hide the value. Styled to
+/// match `BurnTextFieldStyle`.
+struct RevealableSecureField: View {
+    let placeholder: String
+    @Binding var text: String
+    @State private var revealed = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Group {
+                if revealed {
+                    TextField(placeholder, text: $text)
+                } else {
+                    SecureField(placeholder, text: $text)
+                }
+            }
+            .textFieldStyle(.plain)
+            .font(.system(size: 12))
+            .foregroundColor(Theme.textMain)
+            .focused($focused)
+
+            Button {
+                revealed.toggle()
+                focused = true
+            } label: {
+                Image(systemName: revealed ? "eye.slash" : "eye")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(Theme.textMuted)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(revealed ? "Hide key" : "Show key")
+        }
+        .padding(8)
+        .background(Theme.bg)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border, lineWidth: 1))
     }
 }
 
