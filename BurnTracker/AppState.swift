@@ -366,8 +366,8 @@ final class AppState: ObservableObject {
 
     // MARK: - Session automation
 
-    func startSession(account: Account, prompt: String) {
-        SessionWindowController.start(accountId: account.id, sessionKey: account.sessionKey, prompt: prompt)
+    func startSession(account: Account) {
+        SessionWindowController.start(accountId: account.id, sessionKey: account.sessionKey)
     }
 
     // MARK: - Timers & watchers

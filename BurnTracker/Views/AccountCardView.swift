@@ -8,7 +8,6 @@ struct ClaudeAccountCardView: View {
     @EnvironmentObject var app: AppState
     let account: Account
 
-    @State private var draftMessage: String = ""
     @State private var sending = false
 
     var body: some View {
@@ -82,9 +81,9 @@ struct ClaudeAccountCardView: View {
                 rightText: quota?.weeklyResetsAt != nil
                     ? "Resets \(TimeFormat.compactReset(quota?.weeklyResetsAt))" : "Resets weekly")
 
-            // Messaging box only when no session is currently running.
+            // Start-session button only when no session is currently running.
             if sessionPct == 0 {
-                messageBox
+                startButton
             }
         }
     }
@@ -96,37 +95,13 @@ struct ClaudeAccountCardView: View {
         return base
     }
 
-    private var messageBox: some View {
-        VStack(spacing: 8) {
-            TextEditor(text: $draftMessage)
-                .font(.system(size: 12))
-                .frame(height: 44)
-                .scrollContentBackground(.hidden)
-                .padding(6)
-                .background(Theme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
-                .overlay(alignment: .topLeading) {
-                    if draftMessage.isEmpty {
-                        Text("Message Claude…")
-                            .font(.system(size: 12))
-                            .foregroundColor(Theme.textDimmed)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 12)
-                            .allowsHitTesting(false)
-                    }
-                }
-
-            Button(sending ? "Starting…" : "Start session now") {
-                let prompt = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !prompt.isEmpty else { return }
-                sending = true
-                app.startSession(account: account, prompt: prompt)
-                draftMessage = ""
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { sending = false }
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .disabled(sending)
+    private var startButton: some View {
+        Button(sending ? "Opening…" : "Start session now") {
+            sending = true
+            app.startSession(account: account)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { sending = false }
         }
+        .buttonStyle(PrimaryButtonStyle())
+        .disabled(sending)
     }
 }
