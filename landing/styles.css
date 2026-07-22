@@ -94,6 +94,17 @@ em { font-style: normal; color: var(--clay); font-weight: 500; }
 .btn-sm { padding: 9px 18px; font-size: 14px; }
 .btn-lg { padding: 15px 28px; font-size: 16px; }
 
+/* Small version tag inside the download button */
+.btn-ver {
+  font-size: 0.78em;
+  font-weight: 600;
+  opacity: 0.7;
+  padding: 2px 7px;
+  margin-left: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
 .btn-primary {
   background: var(--ink);
   color: var(--cream);
