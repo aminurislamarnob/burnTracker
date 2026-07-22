@@ -70,7 +70,7 @@ function createTray() {
       trayImage.setTemplateImage(false);
 
       tray = new Tray(trayImage);
-      tray.setToolTip('Claude Quota Widget');
+      tray.setToolTip('BurnTracker');
 
       tray.on('click', () => {
         if (mainWindow.isVisible()) {
@@ -680,7 +680,7 @@ ipcMain.handle('claude:notify', async (event, { title, body } = {}) => {
     if (!Notification.isSupported()) {
       return { success: false, error: 'Notifications not supported on this system.' };
     }
-    const notification = new Notification({ title: title || 'Claude Quota Widget', body: body || '' });
+    const notification = new Notification({ title: title || 'BurnTracker', body: body || '' });
     notification.on('click', () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.show();

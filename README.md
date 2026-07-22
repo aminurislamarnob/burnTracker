@@ -1,4 +1,4 @@
-# Claude Quota Widget 📊
+# BurnTracker 📊
 
 A beautiful, lightweight, and modern macOS utility status bar widget built with Electron. It resides in your macOS menu bar, allowing you to monitor rolling 5-hour session limits and weekly utilization quotas across multiple Anthropic **Claude.ai** accounts simultaneously.
 
@@ -24,7 +24,7 @@ A beautiful, lightweight, and modern macOS utility status bar widget built with 
 
 ## App Interface Preview 📱
 
-![Claude Quota Widget Preview](assets/preview.png)
+![BurnTracker Preview](assets/preview.png)
 
 ---
 
@@ -74,8 +74,8 @@ npm run dist
 ```
 
 Upon successful compilation, check your local `dist/` directory for:
-- **`dist/Claude Quota Widget-1.0.0-arm64.dmg`**: Drag-and-drop installer window.
-- **`dist/Claude Quota Widget-1.0.0-arm64-mac.zip`**: Standard compressed macOS application bundle.
+- **`dist/BurnTracker-1.0.0-arm64.dmg`**: Drag-and-drop installer window.
+- **`dist/BurnTracker-1.0.0-arm64-mac.zip`**: Standard compressed macOS application bundle.
 
 *Note: Since the bundle is built locally without an official paid Apple Developer certificate, macOS Gatekeeper might show a verification warning. To bypass this on first run, Right-Click the `.app` bundle, select **Open**, and click **Open anyway** in the dialog.*
 
