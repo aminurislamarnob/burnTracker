@@ -73,14 +73,16 @@ struct ExtraUsage: Decodable {
         return 0
     }
 
-    /// A "$3.20 of $10.00"-style label when amounts + currency are known, else
-    /// nil (callers fall back to the percentage). `decimalPlaces` is the display
-    /// precision; amounts are treated as major units in the given currency.
+    /// A "$0.08 of $100.00"-style label when amounts + currency are known, else
+    /// nil (callers fall back to the percentage). Amounts arrive in **minor
+    /// units** (e.g. cents); `decimalPlaces` is both the scaling divisor
+    /// (10^places) and the display precision.
     var amountLabel: String? {
         guard let used = usedCredits, let limit = monthlyLimit else { return nil }
         let symbol = Self.currencySymbol(currency)
         let places = decimalPlaces ?? 2
-        return "\(symbol)\(Self.format(used, places: places)) of \(symbol)\(Self.format(limit, places: places))"
+        let divisor = pow(10.0, Double(places))
+        return "\(symbol)\(Self.format(used / divisor, places: places)) of \(symbol)\(Self.format(limit / divisor, places: places))"
     }
 
     private static func format(_ value: Double, places: Int) -> String {
