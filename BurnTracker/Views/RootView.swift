@@ -4,6 +4,16 @@ import AppKit
 struct RootView: View {
     @EnvironmentObject var app: AppState
 
+    /// The scroll area grows with its content, then scrolls only once it would
+    /// run past the screen — giving the popover a variable height (CodexBar-style)
+    /// instead of a fixed one. The cap is derived from the visible screen height
+    /// (minus room for the menu bar, header, footer, and margins).
+    private var maxContentHeight: CGFloat {
+        let screenHeight = NSScreen.main?.visibleFrame.height ?? 900
+        return max(320, screenHeight - 180)
+    }
+    @State private var contentHeight: CGFloat = 300
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -17,15 +27,20 @@ struct RootView: View {
                     }
                 }
                 .padding(16)
+                .background(GeometryReader { geo in
+                    Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
+                })
             }
             .scrollContentBackground(.hidden)
+            .frame(height: min(contentHeight, maxContentHeight))
 
             Divider().overlay(Theme.border)
             footer
         }
-        .frame(width: 400, height: 620)
+        .frame(width: 400)
         .background(Theme.bg)
         .environment(\.colorScheme, .dark)
+        .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
     }
 
     // MARK: - Header
@@ -103,5 +118,14 @@ struct RootView: View {
         let f = DateFormatter()
         f.dateFormat = "hh:mm:ss a"
         return "Last Sync: \(f.string(from: t))"
+    }
+}
+
+/// Reports the natural height of the popover's scrollable content so the window
+/// can size to fit it (up to a cap).
+private struct ContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
