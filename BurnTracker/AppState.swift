@@ -60,7 +60,7 @@ final class AppState: ObservableObject {
     private func loadFromDisk() {
         let settings = Persistence.load()
         accounts = settings.accounts.map {
-            Account(id: $0.id, label: $0.label, sessionKey: $0.sessionKey, status: .offline)
+            Account(id: $0.id, label: $0.label, sessionKey: $0.sessionKey, email: $0.email, status: .offline)
         }
         if let ag = settings.agAccount {
             agAccount = CliAccount(token: ag.token, email: ag.email, status: .offline)
@@ -76,7 +76,7 @@ final class AppState: ObservableObject {
     func saveToDisk() -> Bool {
         // Strip transient fields, matching `saveAccountsToDisk` in renderer.js.
         let persisted = accounts.map {
-            TrackerSettings.PersistedAccount(id: $0.id, label: $0.label, sessionKey: $0.sessionKey)
+            TrackerSettings.PersistedAccount(id: $0.id, label: $0.label, sessionKey: $0.sessionKey, email: $0.email)
         }
         let ag = agAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
         let gem = geminiAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
@@ -111,6 +111,7 @@ final class AppState: ObservableObject {
                 group.addTask { [weak self] in
                     let result = await ClaudeService.fetchLiveLimits(sessionKey: key)
                     await self?.applyAccountResult(id: id, result: result)
+                    await self?.fetchAccountEmailIfNeeded(id: id, sessionKey: key)
                 }
             }
             if agAccount != nil {
@@ -150,7 +151,17 @@ final class AppState: ObservableObject {
         let key = accounts[idx].sessionKey
         let result = await ClaudeService.fetchLiveLimits(sessionKey: key)
         applyAccountResult(id: id, result: result)
+        await fetchAccountEmailIfNeeded(id: id, sessionKey: key)
         aggregateGlobalStatus()
+    }
+
+    /// Fetches and caches the account email once (when not already known).
+    private func fetchAccountEmailIfNeeded(id: String, sessionKey: String) async {
+        guard let idx = accounts.firstIndex(where: { $0.id == id }), accounts[idx].email == nil else { return }
+        guard let email = await ClaudeService.fetchAccountEmail(sessionKey: sessionKey) else { return }
+        guard let i = accounts.firstIndex(where: { $0.id == id }) else { return }
+        accounts[i].email = email
+        saveToDisk()
     }
 
     func refreshAntigravity() async {
@@ -159,6 +170,7 @@ final class AppState: ObservableObject {
             agAccount?.gemini = result.gemini
             agAccount?.claudeGpt = result.claudeGpt
             if let email = result.email { agAccount?.email = email }
+            agAccount?.lastFetch = Date()
             agAccount?.status = .online
         } else {
             agAccount?.status = .error
@@ -171,6 +183,7 @@ final class AppState: ObservableObject {
             geminiAccount?.gemini = result.gemini
             geminiAccount?.claudeGpt = result.claudeGpt
             if let email = result.email { geminiAccount?.email = email }
+            geminiAccount?.lastFetch = Date()
             geminiAccount?.status = .online
         } else {
             geminiAccount?.status = .error

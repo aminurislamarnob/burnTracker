@@ -27,6 +27,9 @@ struct TrackerSettings: Codable {
         var id: String
         var label: String
         var sessionKey: String
+        /// Cached account email (optional; older files omit it — remains
+        /// drop-in compatible since unknown/missing keys are tolerated).
+        var email: String?
     }
     struct PersistedAg: Codable {
         var token: String

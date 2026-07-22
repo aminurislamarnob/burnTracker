@@ -77,6 +77,26 @@ enum ClaudeService {
         }
     }
 
+    private struct Bootstrap: Decodable {
+        struct Account: Decodable { let email_address: String? }
+        let account: Account?
+    }
+
+    /// Fetches the account's email address from `/api/bootstrap`
+    /// (`account.email_address`). Returns nil on any failure — the email is a
+    /// nice-to-have label and must never block the quota path.
+    static func fetchAccountEmail(sessionKey: String) async -> String? {
+        guard !sessionKey.isEmpty else { return nil }
+        let req = makeRequest(url: URL(string: "https://claude.ai/api/bootstrap")!, sessionKey: sessionKey)
+        guard let (data, resp) = try? await session.data(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200,
+              let boot = try? JSONDecoder().decode(Bootstrap.self, from: data),
+              let email = boot.account?.email_address, !email.isEmpty else {
+            return nil
+        }
+        return email
+    }
+
     private static func makeRequest(url: URL, sessionKey: String) -> URLRequest {
         var req = URLRequest(url: url)
         req.setValue("sessionKey=\(sessionKey)", forHTTPHeaderField: "Cookie")

@@ -8,21 +8,27 @@ struct DashboardView: View {
             emptyState
         } else {
             VStack(spacing: 16) {
-                if !app.accounts.isEmpty {
-                    AccountCardView()
+                // One card per connected Claude account.
+                ForEach(app.accounts) { account in
+                    ClaudeAccountCardView(account: account)
                 }
+                // Each CLI provider in its own card.
                 if let gemini = app.geminiAccount {
                     CliQuotaCardView(
                         title: "Gemini CLI",
+                        subtitle: "Gemini Code Assist",
+                        tint: Theme.geminiTint,
                         account: gemini,
-                        errorMessage: "Sync Failed: Could not fetch Gemini CLI quota",
+                        errorMessage: "Could not fetch Gemini CLI quota",
                         onRefresh: { Task { await app.refreshGemini() } })
                 }
                 if let ag = app.agAccount {
                     CliQuotaCardView(
                         title: "Antigravity",
+                        subtitle: "Antigravity IDE",
+                        tint: Theme.antigravityTint,
                         account: ag,
-                        errorMessage: "Sync Failed: Could not fetch local Antigravity quota (is the Antigravity app running?)",
+                        errorMessage: "Could not fetch local Antigravity quota (is the Antigravity app running?)",
                         onRefresh: { Task { await app.refreshAntigravity() } })
                 }
             }

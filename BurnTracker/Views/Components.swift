@@ -1,101 +1,94 @@
 import SwiftUI
 
-/// Progress-bar fill styles, matching the `.progress-bar-fill` variants in styles.css.
-enum BarStyle {
-    case accent    // default (session, normal)
-    case weekly    // info blue (weekly, normal)
-    case warning
-    case danger
-    case green     // success
+// MARK: - Compact quota row (shared by Claude + CLI provider cards)
 
-    var gradient: LinearGradient {
-        let colors: [Color]
-        switch self {
-        case .accent:  colors = [Theme.accent, Theme.accentHover]
-        case .weekly:  colors = [Theme.info, Color(hex: 0x30B0FF)]
-        case .warning: colors = [Color(hex: 0xFF9F0A), Color(hex: 0xFFD60A)]
-        case .danger:  colors = [Theme.error, Color(hex: 0xFF6B6B)]
-        case .green:   colors = [Theme.success, Color(hex: 0x30D158)]
-        }
-        return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
-    }
-
-    var glow: Color {
-        switch self {
-        case .accent:  return Theme.accent
-        case .weekly:  return Theme.info
-        case .warning: return Color(hex: 0xFF9F0A)
-        case .danger:  return Theme.error
-        case .green:   return Theme.success
-        }
-    }
-}
-
-struct ProgressBar: View {
-    let percent: Int          // 0...100
-    let style: BarStyle
+/// A thin, fully-rounded solid-tint bar (no gradient/glow), used in the compact
+/// CodexBar-style cards.
+struct CompactBar: View {
+    let percent: Int
+    let tint: Color
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.white.opacity(0.04))
-                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(Theme.border, lineWidth: 1))
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(style.gradient)
-                    .shadow(color: style.glow.opacity(0.6), radius: 4)
+                Capsule().fill(Color.white.opacity(0.08))
+                Capsule()
+                    .fill(tint)
                     .frame(width: max(0, min(1, Double(percent) / 100.0)) * geo.size.width)
-                    .animation(.easeInOut(duration: 0.5), value: percent)
+                    .animation(.easeInOut(duration: 0.4), value: percent)
             }
         }
-        .frame(height: 10)
+        .frame(height: 6)
     }
 }
 
-/// A status dot (green/orange/red).
-struct PulseDot: View {
-    let status: SyncStatus
-
-    private var color: Color {
-        switch status {
-        case .online:  return Theme.success
-        case .syncing: return Theme.warning
-        case .error:   return Theme.error
-        case .offline: return Theme.textDimmed
-        }
-    }
-
-    var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 8, height: 8)
-            .shadow(color: color.opacity(0.7), radius: 3)
-    }
-}
-
-/// A single labelled quota row: title + description, a bar, and a footer.
-struct QuotaItemView: View {
+/// A compact metric row: bold title, thin bar, and a left/right footer
+/// (e.g. "42% used" · "Resets in 5h").
+struct CompactQuotaRow: View {
     let title: String
-    let desc: String
-    let footer: String
     let percent: Int
-    let style: BarStyle
+    let tint: Color
+    let leftText: String
+    let rightText: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Theme.textMuted)
-                Spacer()
-                Text(desc)
-                    .font(.system(size: 11, weight: .semibold))
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(Theme.textMain)
+
+            CompactBar(percent: percent, tint: tint)
+
+            HStack(alignment: .firstTextBaseline) {
+                Text(leftText)
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundColor(Theme.textMain)
+                Spacer()
+                Text(rightText)
+                    .font(.system(size: 12))
+                    .foregroundColor(Theme.textMuted)
             }
-            ProgressBar(percent: percent, style: style)
-            Text(footer)
-                .font(.system(size: 10))
-                .foregroundColor(Theme.textDimmed)
+        }
+    }
+}
+
+/// A compact card header: bold title + optional trailing detail on line 1,
+/// then an "Updated …" status line + optional subtitle on line 2.
+struct CompactCardHeader: View {
+    let title: String
+    let detail: String?
+    let statusLine: String
+    let subtitle: String?
+    let onRefresh: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(title)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(Theme.textMain)
+                Spacer(minLength: 8)
+                if let detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(.system(size: 12))
+                        .foregroundColor(Theme.textMuted)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                IconButton(systemName: "arrow.clockwise", help: "Refresh \(title)", size: 12, action: onRefresh)
+            }
+            HStack(spacing: 8) {
+                Text(statusLine)
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.textDimmed)
+                Spacer(minLength: 8)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundColor(Theme.textDimmed)
+                        .lineLimit(1)
+                }
+            }
         }
     }
 }

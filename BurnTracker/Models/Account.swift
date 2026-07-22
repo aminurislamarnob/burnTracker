@@ -22,6 +22,10 @@ struct Account: Identifiable {
     var label: String
     var sessionKey: String
 
+    /// The account's email address, fetched from `/api/bootstrap` and cached to
+    /// disk so it shows immediately on the next launch.
+    var email: String?
+
     // Transient runtime state
     var status: SyncStatus = .offline
     var quota: QuotaData?
@@ -32,10 +36,12 @@ struct Account: Identifiable {
     init(id: String = "acc_\(Int(Date().timeIntervalSince1970 * 1000))",
          label: String,
          sessionKey: String,
+         email: String? = nil,
          status: SyncStatus = .offline) {
         self.id = id
         self.label = label
         self.sessionKey = sessionKey
+        self.email = email
         self.status = status
     }
 
@@ -59,4 +65,5 @@ struct CliAccount {
     var status: SyncStatus = .offline
     var gemini: AGGroup?
     var claudeGpt: AGGroup?
+    var lastFetch: Date?
 }

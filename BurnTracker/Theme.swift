@@ -23,6 +23,13 @@ enum Theme {
     static let error = Color(hex: 0xFF453A)        // Apple red
     static let info = Color(hex: 0x0A84FF)         // Apple blue
     static let warning = Color(hex: 0xFF9F0A)      // Apple orange
+
+    // CLI provider brand tints (compact quota bars).
+    static let geminiTint = Color(hex: 0xA78BFA)       // Gemini CLI — soft violet
+    static let antigravityTint = Color(hex: 0x7BC67F)  // Antigravity — sage green
+
+    /// A subtler divider used between compact flat rows.
+    static let hairline = Color.white.opacity(0.06)
 }
 
 extension Color {
