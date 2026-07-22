@@ -18,6 +18,8 @@ final class AppState: ObservableObject {
     @Published var agAccount: CliAccount?
     @Published var geminiAccount: CliAccount?
     @Published var globalStatus: GlobalStatus = .offline
+    /// CLI-wide Claude Code usage trend (local logs), shared across Claude cards.
+    @Published var claudeUsageTrend: ClaudeUsageTrend?
     @Published var refreshMinutes: Int = 15
     @Published var alertThreshold: Int = 80
     @Published var lastSyncTime: Date?
@@ -127,6 +129,19 @@ final class AppState: ObservableObject {
         }
 
         aggregateGlobalStatus()
+
+        // Local Claude Code usage trend — scanned independently (the first pass
+        // over hundreds of MB of logs can take a few seconds), so it never holds
+        // up the quota sync / "Synced" status. Only relevant with a Claude card.
+        if !accounts.isEmpty {
+            Task { await refreshClaudeUsageTrend() }
+        }
+    }
+
+    /// Rescans local Claude Code logs (off the main actor) and publishes the trend.
+    func refreshClaudeUsageTrend() async {
+        let trend = await ClaudeUsageScanner.shared.scan()
+        if let trend { claudeUsageTrend = trend }
     }
 
     private func applyAccountResult(id: String, result: Result<QuotaData, ClaudeService.FetchError>) {
