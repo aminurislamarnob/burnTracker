@@ -7,9 +7,18 @@ import SwiftUI
 struct UsageTrendSection: View {
     let trend: ClaudeUsageTrend
     var tint: Color = Theme.info
+    var title: String = "Usage Trend"
 
-    @State private var expanded = false
+    @State private var expanded: Bool
     @State private var activeIndex: Int?
+
+    init(trend: ClaudeUsageTrend, tint: Color = Theme.info,
+         title: String = "Usage Trend", initiallyExpanded: Bool = false) {
+        self.trend = trend
+        self.tint = tint
+        self.title = title
+        _expanded = State(initialValue: initiallyExpanded)
+    }
 
     private static let chartHeight: CGFloat = 60
 
@@ -19,18 +28,24 @@ struct UsageTrendSection: View {
         VStack(alignment: .leading, spacing: 0) {
             header
 
-            if expanded {
-                VStack(alignment: .leading, spacing: 8) {
-                    readout
-                    chart
-                    axis
-                    Rectangle().fill(Theme.hairline).frame(height: 1)
-                        .padding(.vertical, 4)
-                    totals
+            // Clip container anchored at the header's bottom edge: the body slides
+            // down from behind the header (masked above) rather than fading in from
+            // the middle of the card.
+            VStack(alignment: .leading, spacing: 0) {
+                if expanded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        readout
+                        chart
+                        axis
+                        Rectangle().fill(Theme.hairline).frame(height: 1)
+                            .padding(.vertical, 4)
+                        totals
+                    }
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top))
                 }
-                .padding(.top, 12)
-                .transition(.opacity.combined(with: .move(edge: .top)))
             }
+            .clipped()
         }
     }
 
@@ -40,8 +55,11 @@ struct UsageTrendSection: View {
         Button {
             withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
         } label: {
-            HStack {
-                Text("Usage Trend")
+            HStack(spacing: 7) {
+                Image(systemName: "chart.bar.xaxis")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(tint)
+                Text(title)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(Theme.textMain)
                 Spacer()

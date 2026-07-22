@@ -26,14 +26,6 @@ struct ClaudeAccountCardView: View {
 
             content
                 .padding(.top, 14)
-
-            // Local Claude Code usage trend (CLI-wide, shared across cards).
-            if let trend = app.claudeUsageTrend, !trend.days.isEmpty {
-                Rectangle().fill(Theme.hairline).frame(height: 1)
-                    .padding(.top, 16)
-                UsageTrendSection(trend: trend)
-                    .padding(.top, 14)
-            }
         }
     }
 
