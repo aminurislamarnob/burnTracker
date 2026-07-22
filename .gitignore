@@ -1,9 +1,15 @@
-node_modules/
-dist/
-mac-arm64/
-out/
-*.log
+# Build output
+build/
+DerivedData/
+
+# Xcode user-specific state
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+# macOS / logs / local profiles
 .DS_Store
+*.log
 .claude
 .gemini
-package-lock.json
