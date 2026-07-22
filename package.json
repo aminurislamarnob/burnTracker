@@ -1,7 +1,7 @@
 {
-  "name": "claude-quota-widget",
+  "name": "burntracker",
   "version": "1.1.8",
-  "description": "A beautiful macOS desktop quota widget for Claude",
+  "description": "Track AI token usage across Claude, OpenAI, Gemini & more.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -20,7 +20,7 @@
   },
   "build": {
     "appId": "com.arnob.claudequotawidget",
-    "productName": "Claude Quota Widget",
+    "productName": "BurnTracker",
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "assets/icon.icns",
@@ -30,7 +30,7 @@
       ]
     },
     "dmg": {
-      "title": "Install Claude Quota Widget",
+      "title": "Install BurnTracker",
       "contents": [
         {
           "x": 130,
