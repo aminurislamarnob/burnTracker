@@ -13,7 +13,7 @@ A beautiful, lightweight, and modern macOS menu-bar utility built natively in **
 - **Native Menu Bar App:** A single `MenuBarExtra` window that lives in the top status bar with no Dock icon. Clicking the icon toggles the compact widget; a power button in the header quits the app.
 - **Minimal macOS Aesthetic:** Dark-themed cards with responsive status pulsing and native SF typography, matching Apple utility tools.
 - **Multi-Account Quota Tracking:** Add and track multiple Claude accounts (e.g. *Personal*, *Work*, *Enterprise*) with custom labels.
-- **Antigravity / Gemini CLI Quotas:** Link your local Antigravity or Gemini CLI to track real Gemini and Claude/GPT usage buckets (weekly + 5-hour), read locally with no extra login.
+- **Antigravity & Gemini CLI Quotas:** Link your local Antigravity app and Gemini CLI as **two separate providers**, each with its own card and sync, to track real Gemini and Claude/GPT usage buckets (weekly + 5-hour), read locally with no extra login.
 - **Inline Account Editing:** Update a label or rotate an expired `sessionKey` directly from the settings list — changing the key automatically re-validates the account against Anthropic.
 - **Configurable Auto-Refresh:** Choose how often quotas sync in the background (every 5, 10, 15, 30, or 60 minutes). Quotas also refresh instantly whenever you open the widget, and whenever your local `~/.claude` data changes.
 - **Usage Alerts:** Get a native macOS notification the first time an account's 5-hour session crosses a threshold you pick (50%–95%), or switch alerts **Off**. Each account alerts once per session window and re-arms automatically after the session resets.

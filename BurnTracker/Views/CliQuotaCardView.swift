@@ -1,50 +1,53 @@
 import SwiftUI
 
-/// The "Antigravity / Gemini CLI" card. Bars show *remaining* quota, so the
-/// color scale is inverted vs the Claude cards (low = danger).
-struct AntigravityCardView: View {
-    @EnvironmentObject var app: AppState
+/// A generic quota card for a linked CLI provider (Antigravity or Gemini CLI).
+/// Bars show *remaining* quota, so the color scale is inverted vs the Claude
+/// cards (low = danger). Gemini CLI and Antigravity each render their own card.
+struct CliQuotaCardView: View {
+    let title: String
+    let account: CliAccount
+    /// Message shown when the fetch fails (source-specific).
+    let errorMessage: String
+    let onRefresh: () -> Void
 
     var body: some View {
-        if let ag = app.agAccount {
-            Card {
-                HStack(spacing: 6) {
-                    PulseDot(status: ag.status)
-                    Text("Antigravity / Gemini CLI")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(Theme.textMain)
-                    if let email = ag.email {
-                        Text(email)
-                            .font(.system(size: 11))
-                            .foregroundColor(Theme.textMuted)
-                    }
-                    Spacer()
-                    IconButton(systemName: "arrow.clockwise", help: "Refresh Antigravity Quota", size: 14) {
-                        Task { await app.refreshAntigravity() }
-                    }
+        Card {
+            HStack(spacing: 6) {
+                PulseDot(status: account.status)
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(Theme.textMain)
+                if let email = account.email {
+                    Text(email)
+                        .font(.system(size: 11))
+                        .foregroundColor(Theme.textMuted)
                 }
-                .padding(.bottom, 12)
-
-                body(for: ag)
+                Spacer()
+                IconButton(systemName: "arrow.clockwise", help: "Refresh \(title) Quota", size: 14) {
+                    onRefresh()
+                }
             }
+            .padding(.bottom, 12)
+
+            content
         }
     }
 
     @ViewBuilder
-    private func body(for ag: AgAccount) -> some View {
-        if ag.status == .error {
-            Text("Sync Failed: Could not fetch local Antigravity CLI quota")
+    private var content: some View {
+        if account.status == .error {
+            Text(errorMessage)
                 .font(.system(size: 12))
                 .foregroundColor(Theme.error)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-        } else if ag.status == .syncing && ag.gemini == nil && ag.claudeGpt == nil {
-            Text("Syncing Antigravity quotas...")
+        } else if account.status == .syncing && account.gemini == nil && account.claudeGpt == nil {
+            Text("Syncing \(title) quotas...")
                 .font(.system(size: 12))
                 .foregroundColor(Theme.textDimmed)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-        } else if ag.gemini == nil && ag.claudeGpt == nil {
+        } else if account.gemini == nil && account.claudeGpt == nil {
             Text("No quota data available")
                 .font(.system(size: 12))
                 .foregroundColor(Theme.textDimmed)
@@ -52,11 +55,11 @@ struct AntigravityCardView: View {
                 .padding(.vertical, 10)
         } else {
             VStack(alignment: .leading, spacing: 12) {
-                if let g = ag.gemini {
+                if let g = account.gemini {
                     groupView(short: "Gemini", group: g)
                 }
-                if let c = ag.claudeGpt {
-                    if ag.gemini != nil {
+                if let c = account.claudeGpt {
+                    if account.gemini != nil {
                         Rectangle().fill(Theme.border).frame(height: 1).padding(.vertical, 4)
                     }
                     groupView(short: "Claude & GPT", group: c)

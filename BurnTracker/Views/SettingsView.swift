@@ -6,6 +6,7 @@ struct SettingsView: View {
     var body: some View {
         VStack(spacing: 15) {
             claudeCard
+            geminiCard
             antigravityCard
         }
     }
@@ -97,22 +98,49 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Antigravity card
+    // MARK: - Gemini CLI card
 
-    private var antigravityCard: some View {
+    private var geminiCard: some View {
         Card {
-            SettingsSectionTitle("Antigravity / Gemini CLI Account")
-            Text("Link your local Antigravity or Gemini CLI to track real usage quotas.")
+            SettingsSectionTitle("Gemini CLI Account")
+            Text("Link your local Gemini CLI to track real usage quotas via the Cloud Code API.")
                 .font(.system(size: 12))
                 .foregroundColor(Theme.textMuted)
                 .padding(.bottom, 12)
 
-            Text(app.agAccount != nil ? "CLI Linked (\(app.agAccount?.email ?? ""))" : "Not linked.")
+            Text(app.geminiAccount != nil ? "Linked (\(app.geminiAccount?.email ?? ""))" : "Not linked.")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(Theme.textMain)
                 .padding(.bottom, 12)
 
-            AntigravityLinkControls()
+            CliLinkControls(
+                isLinked: app.geminiAccount != nil,
+                linkTitle: "Sync with Gemini CLI",
+                link: { await app.linkGemini() },
+                unlink: { app.unlinkGemini() })
+        }
+    }
+
+    // MARK: - Antigravity card
+
+    private var antigravityCard: some View {
+        Card {
+            SettingsSectionTitle("Antigravity Account")
+            Text("Link your local Antigravity app to track real usage quotas from its language server.")
+                .font(.system(size: 12))
+                .foregroundColor(Theme.textMuted)
+                .padding(.bottom, 12)
+
+            Text(app.agAccount != nil ? "Linked (\(app.agAccount?.email ?? ""))" : "Not linked.")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Theme.textMain)
+                .padding(.bottom, 12)
+
+            CliLinkControls(
+                isLinked: app.agAccount != nil,
+                linkTitle: "Sync with Antigravity",
+                link: { await app.linkAntigravity() },
+                unlink: { app.unlinkAntigravity() })
         }
     }
 }
@@ -217,20 +245,24 @@ private struct AccountSettingsRow: View {
     }
 }
 
-// MARK: - Antigravity link controls
+// MARK: - CLI link controls (shared by Gemini CLI + Antigravity)
 
-private struct AntigravityLinkControls: View {
-    @EnvironmentObject var app: AppState
+private struct CliLinkControls: View {
+    let isLinked: Bool
+    let linkTitle: String
+    let link: () async -> String?
+    let unlink: () -> Void
+
     @State private var busy = false
     @State private var errorText: String?
 
     var body: some View {
         VStack(spacing: 10) {
-            if app.agAccount == nil {
-                Button(busy ? "Syncing..." : "Sync with Antigravity / Gemini CLI") {
+            if !isLinked {
+                Button(busy ? "Syncing..." : linkTitle) {
                     busy = true; errorText = nil
                     Task {
-                        let err = await app.linkAntigravity()
+                        let err = await link()
                         errorText = err
                         busy = false
                     }
@@ -238,7 +270,7 @@ private struct AntigravityLinkControls: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(busy)
             } else {
-                Button("Remove Account") { app.unlinkAntigravity() }
+                Button("Remove Account") { unlink() }
                     .buttonStyle(SecondaryButtonStyle())
             }
             if let errorText {

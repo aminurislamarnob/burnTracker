@@ -80,7 +80,7 @@ struct RootView: View {
     }
 
     private var footerColor: Color {
-        if app.accounts.isEmpty && app.agAccount == nil { return Theme.error }
+        if !app.hasAnyAccount { return Theme.error }
         switch app.globalStatus {
         case .online:  return Theme.success
         case .syncing, .warning: return Theme.warning
@@ -89,7 +89,7 @@ struct RootView: View {
     }
 
     private var footerText: String {
-        if app.accounts.isEmpty && app.agAccount == nil { return "No Accounts Connected" }
+        if !app.hasAnyAccount { return "No Accounts Connected" }
         switch app.globalStatus {
         case .syncing: return "Syncing..."
         case .online:  return "Synced"

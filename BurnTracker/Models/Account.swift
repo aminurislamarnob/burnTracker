@@ -51,8 +51,9 @@ struct Account: Identifiable {
     }
 }
 
-/// The Antigravity / Gemini CLI linked account.
-struct AgAccount {
+/// A linked CLI quota account — used for both the Antigravity IDE and the
+/// Gemini CLI providers. Holds the transient per-provider quota state.
+struct CliAccount {
     var token: String
     var email: String?
     var status: SyncStatus = .offline

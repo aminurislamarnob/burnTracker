@@ -21,9 +21,9 @@ BurnTracker/
   AppState.swift                 @MainActor ObservableObject — all view state + coordination
   Theme.swift                    color/design tokens
   Models/                        Account, QuotaData, AntigravityData, TrackerSettings
-  Services/                      ClaudeService, AntigravityService, Persistence, FileWatcher,
-                                 NotificationManager, SessionAutomation
-  Views/                         RootView, DashboardView, AccountCardView, AntigravityCardView,
+  Services/                      ClaudeService, AntigravityService, GeminiService, CliQuotaSupport,
+                                 Persistence, FileWatcher, NotificationManager, SessionAutomation
+  Views/                         RootView, DashboardView, AccountCardView, CliQuotaCardView,
                                  SettingsView, Components
   Utilities/TimeFormat.swift
   Assets.xcassets               AppIcon, MenuBarIcon (template), AppIconImage
@@ -33,10 +33,10 @@ landing/                          marketing site (deployed via .github/workflows
 
 ## Architecture
 
-A native SwiftUI macOS **menu-bar app** that displays Claude.ai usage quotas for multiple accounts, plus an Antigravity/Gemini CLI quota card. (Migrated from an Electron app; the JS/IPC layers no longer exist.)
+A native SwiftUI macOS **menu-bar app** that displays Claude.ai usage quotas for multiple accounts, plus two **separate** CLI quota cards — Antigravity and Gemini CLI — each an independent provider with its own source, sync, and link/unlink. (Migrated from an Electron app; the JS/IPC layers no longer exist.)
 
 - **`BurnTrackerApp.swift`** — the `@main` scene is a single `MenuBarExtra` with `.menuBarExtraStyle(.window)` (a popover-style window). An `NSApplicationDelegateAdaptor` sets `NSApp.setActivationPolicy(.accessory)` so there is no Dock icon, and calls `AppState.shared.onLaunch()` at startup so watchers/timer run before the popover is ever opened.
-- **`AppState`** (`@MainActor final class … ObservableObject`, singleton `AppState.shared`) — the single source of view state (`accounts`, `agAccount`, `activeView`, `globalStatus`, `refreshMinutes`, `alertThreshold`) and all coordination logic. Views observe it via `@EnvironmentObject`.
+- **`AppState`** (`@MainActor final class … ObservableObject`, singleton `AppState.shared`) — the single source of view state (`accounts`, `agAccount`, `geminiAccount`, `activeView`, `globalStatus`, `refreshMinutes`, `alertThreshold`) and all coordination logic. Views observe it via `@EnvironmentObject`.
 - **Services** are stateless enums/classes with `async` methods. There is no IPC boundary — networking, filesystem, and process calls run directly (no CORS/cookie restrictions to work around).
 
 ### Data flow & live quota fetching
@@ -49,19 +49,19 @@ The live quota path is the core feature. `ClaudeService.fetchLiveLimits(sessionK
 
 Services return `Result`/optionals rather than throwing across a boundary; `AppState` branches on success and updates the matching account by `id`.
 
-### Antigravity / Gemini quota
+### Antigravity & Gemini CLI quota (two separate providers)
 
-`AntigravityService.fetchQuota()` mirrors the original two-strategy approach:
-1. **Local** — runs `lsof` to find the Antigravity language-server port, then POSTs to `https://127.0.0.1:{port}/…/RetrieveUserQuotaSummary`. A scoped `URLSessionDelegate` trusts the self-signed cert **for 127.0.0.1 only**.
-2. **Cloud fallback** — reads `~/.gemini/oauth_creds.json`, decodes the `id_token` JWT for the client id, refreshes the token against the embedded (base64-obfuscated) Google OAuth client secrets, and POSTs to the Cloud Code `retrieveUserQuota` API.
+Antigravity (the IDE) and the Gemini CLI are tracked **independently** — each has its own linked account (`agAccount` / `geminiAccount`), its own card, and its own refresh. The two originally-combined fetch strategies are now split one-per-provider:
+1. **`AntigravityService.fetchQuota()`** — runs `lsof` to find the Antigravity language-server port, then POSTs to `https://127.0.0.1:{port}/…/RetrieveUserQuotaSummary`. A scoped `URLSessionDelegate` (in `CliQuotaSupport`) trusts the self-signed cert **for 127.0.0.1 only**.
+2. **`GeminiService.fetchQuota()`** — reads `~/.gemini/oauth_creds.json`, decodes the `id_token` JWT for the client id, refreshes the token against the embedded (base64-obfuscated) Google OAuth client secrets, and POSTs to the Cloud Code `retrieveUserQuota` API.
 
-The bucket-selection heuristics (weekly vs 5-hour, gemini vs claude/gpt) are load-bearing and undocumented — port them verbatim if refactoring.
+`CliQuotaSupport` holds everything both providers share: paths, email resolution, JWT/OAuth handling, the localhost-trust delegate, and the bucket parsers. Each provider still surfaces the same two model-family groups internally (**Gemini** and **Claude & GPT**), rendered by the shared `CliQuotaCardView`. The bucket-selection heuristics (weekly vs 5-hour, gemini vs claude/gpt) are load-bearing and undocumented — port them verbatim if refactoring.
 
 ### Persistence
 
 State is stored as JSON in `~/.claude/tracker-settings.json` (`Persistence.swift`), the **same file and shape** as the original Electron build (drop-in compatible):
 - `accounts` — `{ id, label, sessionKey }`. Transient runtime fields (`status`, `quota`, `lastFetchTime`, `alertedHighUsage`) are stripped before writing in `AppState.saveToDisk()`.
-- `agAccount` — `{ token, email }`; plus `refreshMinutes` and `alertThreshold`.
+- `agAccount` (Antigravity) and `geminiAccount` (Gemini CLI) — each `{ token, email }`; plus `refreshMinutes` and `alertThreshold`. Legacy files with only `agAccount` still load (Antigravity); `geminiAccount` starts unlinked until the user links it.
 
 **Session keys are stored in plaintext** on disk — keep them local, never log them, and never transmit them anywhere except Claude.ai.
 

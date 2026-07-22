@@ -4,15 +4,26 @@ struct DashboardView: View {
     @EnvironmentObject var app: AppState
 
     var body: some View {
-        if app.accounts.isEmpty && app.agAccount == nil {
+        if !app.hasAnyAccount {
             emptyState
         } else {
             VStack(spacing: 16) {
                 if !app.accounts.isEmpty {
                     AccountCardView()
                 }
-                if app.agAccount != nil {
-                    AntigravityCardView()
+                if let gemini = app.geminiAccount {
+                    CliQuotaCardView(
+                        title: "Gemini CLI",
+                        account: gemini,
+                        errorMessage: "Sync Failed: Could not fetch Gemini CLI quota",
+                        onRefresh: { Task { await app.refreshGemini() } })
+                }
+                if let ag = app.agAccount {
+                    CliQuotaCardView(
+                        title: "Antigravity",
+                        account: ag,
+                        errorMessage: "Sync Failed: Could not fetch local Antigravity quota (is the Antigravity app running?)",
+                        onRefresh: { Task { await app.refreshAntigravity() } })
                 }
             }
         }

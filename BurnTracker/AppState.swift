@@ -15,7 +15,8 @@ final class AppState: ObservableObject {
 
     @Published var activeView: ActiveView = .dashboard
     @Published var accounts: [Account] = []
-    @Published var agAccount: AgAccount?
+    @Published var agAccount: CliAccount?
+    @Published var geminiAccount: CliAccount?
     @Published var globalStatus: GlobalStatus = .offline
     @Published var refreshMinutes: Int = 15
     @Published var alertThreshold: Int = 80
@@ -37,11 +38,16 @@ final class AppState: ObservableObject {
         loadFromDisk()
         setupFileWatchers()
         restartAutoRefreshTimer()
-        if !accounts.isEmpty || agAccount != nil {
+        if hasAnyAccount {
             Task { await refreshAll() }
         } else {
             updateGlobalStatus()
         }
+    }
+
+    /// True when at least one provider (Claude, Antigravity, or Gemini CLI) is linked.
+    var hasAnyAccount: Bool {
+        !accounts.isEmpty || agAccount != nil || geminiAccount != nil
     }
 
     /// Called each time the menu-bar popover appears (the `window-shown`
@@ -57,7 +63,10 @@ final class AppState: ObservableObject {
             Account(id: $0.id, label: $0.label, sessionKey: $0.sessionKey, status: .offline)
         }
         if let ag = settings.agAccount {
-            agAccount = AgAccount(token: ag.token, email: ag.email, status: .offline)
+            agAccount = CliAccount(token: ag.token, email: ag.email, status: .offline)
+        }
+        if let gem = settings.geminiAccount {
+            geminiAccount = CliAccount(token: gem.token, email: gem.email, status: .offline)
         }
         refreshMinutes = settings.refreshMinutes
         alertThreshold = settings.alertThreshold
@@ -70,8 +79,10 @@ final class AppState: ObservableObject {
             TrackerSettings.PersistedAccount(id: $0.id, label: $0.label, sessionKey: $0.sessionKey)
         }
         let ag = agAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
+        let gem = geminiAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
         let settings = TrackerSettings(accounts: persisted,
                                        agAccount: ag,
+                                       geminiAccount: gem,
                                        refreshMinutes: refreshMinutes,
                                        alertThreshold: alertThreshold)
         Persistence.save(settings)
@@ -83,13 +94,14 @@ final class AppState: ObservableObject {
     /// Re-syncs everything. Invoked by the popover opening, the background
     /// timer, and the file watchers.
     func refreshAll() async {
-        guard !accounts.isEmpty || agAccount != nil else { return }
+        guard hasAnyAccount else { return }
 
         restartAutoRefreshTimer()
 
         globalStatus = .syncing
         for i in accounts.indices { accounts[i].status = .syncing }
         if agAccount != nil { agAccount?.status = .syncing }
+        if geminiAccount != nil { geminiAccount?.status = .syncing }
         updateGlobalStatus()
 
         await withTaskGroup(of: Void.self) { group in
@@ -104,6 +116,11 @@ final class AppState: ObservableObject {
             if agAccount != nil {
                 group.addTask { [weak self] in
                     await self?.refreshAntigravity()
+                }
+            }
+            if geminiAccount != nil {
+                group.addTask { [weak self] in
+                    await self?.refreshGemini()
                 }
             }
         }
@@ -148,6 +165,18 @@ final class AppState: ObservableObject {
         }
     }
 
+    func refreshGemini() async {
+        guard let token = geminiAccount?.token, !token.isEmpty else { return }
+        if let result = await GeminiService.fetchQuota() {
+            geminiAccount?.gemini = result.gemini
+            geminiAccount?.claudeGpt = result.claudeGpt
+            if let email = result.email { geminiAccount?.email = email }
+            geminiAccount?.status = .online
+        } else {
+            geminiAccount?.status = .error
+        }
+    }
+
     // MARK: - Notifications
 
     /// Edge-triggered: fires once when session usage first crosses the
@@ -179,6 +208,9 @@ final class AppState: ObservableObject {
         }
         if let ag = agAccount {
             if ag.status == .online { anySuccess = true } else { allSuccess = false }
+        }
+        if let gem = geminiAccount {
+            if gem.status == .online { anySuccess = true } else { allSuccess = false }
         }
         if allSuccess {
             globalStatus = .online
@@ -230,7 +262,7 @@ final class AppState: ObservableObject {
         guard let creds = AntigravityService.login() else {
             return "Could not find ~/.gemini/oauth_creds.json"
         }
-        agAccount = AgAccount(token: creds.token, email: creds.email, status: .syncing)
+        agAccount = CliAccount(token: creds.token, email: creds.email, status: .syncing)
         saveToDisk()
         await refreshAntigravity()
         aggregateGlobalStatus()
@@ -239,6 +271,25 @@ final class AppState: ObservableObject {
 
     func unlinkAntigravity() {
         agAccount = nil
+        saveToDisk()
+        aggregateGlobalStatus()
+    }
+
+    // MARK: - Gemini CLI linking
+
+    func linkGemini() async -> String? {
+        guard let creds = GeminiService.login() else {
+            return "Could not find ~/.gemini/oauth_creds.json"
+        }
+        geminiAccount = CliAccount(token: creds.token, email: creds.email, status: .syncing)
+        saveToDisk()
+        await refreshGemini()
+        aggregateGlobalStatus()
+        return nil
+    }
+
+    func unlinkGemini() {
+        geminiAccount = nil
         saveToDisk()
         aggregateGlobalStatus()
     }
