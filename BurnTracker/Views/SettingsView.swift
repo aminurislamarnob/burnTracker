@@ -8,6 +8,44 @@ struct SettingsView: View {
             claudeCard
             geminiCard
             antigravityCard
+            generalCard
+        }
+    }
+
+    // MARK: - General (app-wide) card
+
+    private var generalCard: some View {
+        Card {
+            SettingsSectionTitle("Auto-Refresh")
+            LabeledField("Background sync interval",
+                         help: "Applies to all providers — Claude, Gemini CLI, and Antigravity. Quotas also refresh instantly whenever you open the widget.") {
+                Picker("", selection: Binding(
+                    get: { app.refreshMinutes },
+                    set: { app.setRefreshMinutes($0) })) {
+                    Text("Every 5 minutes").tag(5)
+                    Text("Every 10 minutes").tag(10)
+                    Text("Every 15 minutes").tag(15)
+                    Text("Every 30 minutes").tag(30)
+                    Text("Every hour").tag(60)
+                }
+                .labelsHidden()
+            }
+
+            Divider24()
+
+            SettingsSectionTitle("Notifications")
+            LabeledField("Alert when 5-hour usage reaches",
+                         help: "Sends a macOS notification the first time any provider's 5-hour quota crosses this usage level. For Gemini CLI and Antigravity, usage is measured against their remaining quota.") {
+                Picker("", selection: Binding(
+                    get: { app.alertThreshold },
+                    set: { app.setAlertThreshold($0) })) {
+                    Text("Off").tag(0)
+                    ForEach([50, 60, 70, 75, 80, 85, 90, 95], id: \.self) { v in
+                        Text("\(v)%").tag(v)
+                    }
+                }
+                .labelsHidden()
+            }
         }
     }
 
@@ -35,39 +73,6 @@ struct SettingsView: View {
 
             SettingsSectionTitle("Add Claude Account")
             AddAccountForm()
-
-            Divider24()
-
-            SettingsSectionTitle("Auto-Refresh")
-            LabeledField("Background sync interval",
-                         help: "Quotas also refresh instantly whenever you open the widget.") {
-                Picker("", selection: Binding(
-                    get: { app.refreshMinutes },
-                    set: { app.setRefreshMinutes($0) })) {
-                    Text("Every 5 minutes").tag(5)
-                    Text("Every 10 minutes").tag(10)
-                    Text("Every 15 minutes").tag(15)
-                    Text("Every 30 minutes").tag(30)
-                    Text("Every hour").tag(60)
-                }
-                .labelsHidden()
-            }
-
-            Divider24()
-
-            SettingsSectionTitle("Notifications")
-            LabeledField("Alert when session usage reaches",
-                         help: "Sends a macOS notification the first time your 5-hour session crosses this level.") {
-                Picker("", selection: Binding(
-                    get: { app.alertThreshold },
-                    set: { app.setAlertThreshold($0) })) {
-                    Text("Off").tag(0)
-                    ForEach([50, 60, 70, 75, 80, 85, 90, 95], id: \.self) { v in
-                        Text("\(v)%").tag(v)
-                    }
-                }
-                .labelsHidden()
-            }
 
             Divider24()
 
@@ -222,14 +227,21 @@ private struct AccountSettingsRow: View {
                             .foregroundColor(Theme.textDimmed)
                     }
                     Spacer()
-                    Button("Edit") {
+                    Button {
                         editLabel = account.label
                         editKey = account.sessionKey
                         editing = true
+                    } label: {
+                        Image(systemName: "pencil")
                     }
-                    .buttonStyle(SecondaryButtonStyle()).fixedSize()
-                    Button("Remove") { showRemoveConfirm = true }
-                        .buttonStyle(DangerButtonStyle())
+                    .buttonStyle(IconActionButtonStyle())
+                    .help("Edit account")
+
+                    Button { showRemoveConfirm = true } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(IconActionButtonStyle(danger: true))
+                    .help("Remove account")
                 }
             }
         }

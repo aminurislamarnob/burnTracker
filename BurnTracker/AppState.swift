@@ -172,6 +172,7 @@ final class AppState: ObservableObject {
             if let email = result.email { agAccount?.email = email }
             agAccount?.lastFetch = Date()
             agAccount?.status = .online
+            checkCliUsageAlert(\.agAccount, providerName: "Antigravity")
         } else {
             agAccount?.status = .error
         }
@@ -185,6 +186,7 @@ final class AppState: ObservableObject {
             if let email = result.email { geminiAccount?.email = email }
             geminiAccount?.lastFetch = Date()
             geminiAccount?.status = .online
+            checkCliUsageAlert(\.geminiAccount, providerName: "Gemini CLI")
         } else {
             geminiAccount?.status = .error
         }
@@ -209,6 +211,38 @@ final class AppState: ObservableObject {
         } else {
             accounts[index].alertedHighUsage = false
         }
+    }
+
+    /// Edge-triggered alert for a CLI provider's 5-hour lane. The threshold is
+    /// expressed as *usage* (matching Claude), so we convert the provider's
+    /// *remaining* fraction: used = 100 − (lowest remaining 5-hour bucket).
+    private func checkCliUsageAlert(_ kp: ReferenceWritableKeyPath<AppState, CliAccount?>,
+                                    providerName: String) {
+        let threshold = alertThreshold
+        guard threshold > 0,
+              let acc = self[keyPath: kp], acc.status == .online,
+              let usedPct = fiveHourUsedPct(acc) else { return }
+
+        if usedPct >= threshold {
+            if self[keyPath: kp]?.alertedHighUsage == false {
+                self[keyPath: kp]?.alertedHighUsage = true
+                NotificationManager.shared.notify(
+                    title: "\(providerName) — \(usedPct)% of 5-hour used",
+                    body: "Your \(providerName) 5-hour quota has crossed \(threshold)% usage.")
+            }
+        } else {
+            self[keyPath: kp]?.alertedHighUsage = false
+        }
+    }
+
+    /// 5-hour usage% for a CLI account = 100 − the lowest remaining 5-hour
+    /// bucket across its model families. Returns nil when no 5-hour data exists.
+    private func fiveHourUsedPct(_ acc: CliAccount) -> Int? {
+        var remaining: [Int] = []
+        if let g = acc.gemini { remaining.append(g.fiveHourPct) }
+        if let c = acc.claudeGpt { remaining.append(c.fiveHourPct) }
+        guard let lowestRemaining = remaining.min() else { return nil }
+        return max(0, 100 - lowestRemaining)
     }
 
     // MARK: - Global status
@@ -320,10 +354,14 @@ final class AppState: ObservableObject {
         alertThreshold = threshold
         // Re-arm so a new threshold can fire against current usage.
         for i in accounts.indices { accounts[i].alertedHighUsage = false }
+        agAccount?.alertedHighUsage = false
+        geminiAccount?.alertedHighUsage = false
         saveToDisk()
         for i in accounts.indices where accounts[i].status == .online {
             checkSessionUsageAlert(index: i)
         }
+        checkCliUsageAlert(\.agAccount, providerName: "Antigravity")
+        checkCliUsageAlert(\.geminiAccount, providerName: "Gemini CLI")
     }
 
     // MARK: - Session automation

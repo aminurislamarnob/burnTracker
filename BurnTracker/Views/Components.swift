@@ -162,3 +162,25 @@ struct DangerButtonStyle: ButtonStyle {
             .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }
+
+/// A compact square SF Symbol action button (used for row Edit / Remove).
+/// `danger` renders it in the destructive red treatment.
+struct IconActionButtonStyle: ButtonStyle {
+    var danger: Bool = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed
+        return configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundColor(danger ? Theme.error : Theme.textMain)
+            .frame(width: 30, height: 28)
+            .background(
+                danger
+                    ? Theme.error.opacity(pressed ? 0.22 : 0.1)
+                    : (pressed ? Theme.cardHover : Theme.surface))
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(danger ? Color.clear : Theme.border, lineWidth: 1))
+    }
+}

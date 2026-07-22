@@ -66,4 +66,6 @@ struct CliAccount {
     var gemini: AGGroup?
     var claudeGpt: AGGroup?
     var lastFetch: Date?
+    /// Edge-trigger latch for the 5-hour usage alert (mirrors `Account`).
+    var alertedHighUsage: Bool = false
 }
