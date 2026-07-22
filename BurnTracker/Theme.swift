@@ -28,6 +28,9 @@ enum Theme {
     static let geminiTint = Color(hex: 0xA78BFA)       // Gemini CLI — soft violet
     static let antigravityTint = Color(hex: 0x7BC67F)  // Antigravity — sage green
 
+    /// Purchased-credit ("extra usage") bar — amber/gold to read as spend.
+    static let creditTint = Color(hex: 0xE0A63C)
+
     /// A subtler divider used between compact flat rows.
     static let hairline = Color.white.opacity(0.06)
 
