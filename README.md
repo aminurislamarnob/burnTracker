@@ -1,24 +1,26 @@
 # BurnTracker 📊
 
-A beautiful, lightweight, and modern macOS utility status bar widget built with Electron. It resides in your macOS menu bar, allowing you to monitor rolling 5-hour session limits and weekly utilization quotas across multiple Anthropic **Claude.ai** accounts simultaneously.
+A beautiful, lightweight, and modern macOS menu-bar utility built natively in **Swift + SwiftUI**. It resides in your macOS menu bar, letting you monitor rolling 5-hour session limits and weekly utilization quotas across multiple Anthropic **Claude.ai** accounts simultaneously — plus your local **Antigravity / Gemini CLI** usage.
 
-![macOS Status Bar Integration](https://img.shields.io/badge/Platform-macOS-orange?style=flat-square&logo=apple)
-![Electron](https://img.shields.io/badge/Electron-v31.0-blue?style=flat-square&logo=electron)
-![Vanilla JS/CSS](https://img.shields.io/badge/Frontend-HTML/CSS/JS-green?style=flat-square)
+![macOS Status Bar Integration](https://img.shields.io/badge/Platform-macOS%2013%2B-orange?style=flat-square&logo=apple)
+![Swift](https://img.shields.io/badge/Swift-5-orange?style=flat-square&logo=swift)
+![SwiftUI](https://img.shields.io/badge/UI-SwiftUI-blue?style=flat-square&logo=swift)
 
 ---
 
 ## Key Features 🚀
 
-- **Mac Menu Bar Widget:** Resides directly in the top status bar. Left-clicking the icon instantly toggles the compact window; right-clicking opens a context menu.
-- **Minimal macOS Aesthetic:** Designed using modern glassmorphism, responsive status pulsing, and Outfit/Inter typefaces matching native Apple utility tools.
-- **Multi-Account Quota Tracking:** Add and track multiple Claude accounts (e.g., *Personal*, *Work*, *Enterprise*) with custom labels.
-- **Inline Account Editing:** Update an account's label or rotate its expired `sessionKey` directly from the settings list — no need to remove and re-add. Changing the key automatically re-validates the account against Anthropic.
-- **Configurable Auto-Refresh:** Choose how often quotas sync in the background (every 5, 10, 15, 30, or 60 minutes) from the settings panel. Quotas also refresh instantly whenever you open the widget.
-- **Usage Alerts:** Get a native macOS notification the first time an account's 5-hour session crosses a threshold you pick (50%–95%), or switch alerts **Off** entirely. Each account alerts once per session window and re-arms automatically after the session resets.
-- **Live Syncing & Isolation:** Connects directly to Anthropic's private web endpoints. Accounts are updated concurrently; if a key expires or fails, the widget isolates the warning to that card without affecting other active accounts.
-- **Privacy First:** Your Claude session cookies are stored purely locally in your home directory profile under `~/.claude/tracker-settings.json` and are transmitted directly to Anthropic's endpoints.
-- **Retina-ready Tray Templates:** Employs pre-scaled monochrome status bar icons (`tray-iconTemplate.png` and `tray-iconTemplate@2x.png`) that automatically adapt to light and dark macOS menu bars.
+- **Native Menu Bar App:** A single `MenuBarExtra` window that lives in the top status bar with no Dock icon. Clicking the icon toggles the compact widget; a power button in the header quits the app.
+- **Minimal macOS Aesthetic:** Dark-themed cards with responsive status pulsing and native SF typography, matching Apple utility tools.
+- **Multi-Account Quota Tracking:** Add and track multiple Claude accounts (e.g. *Personal*, *Work*, *Enterprise*) with custom labels.
+- **Antigravity / Gemini CLI Quotas:** Link your local Antigravity or Gemini CLI to track real Gemini and Claude/GPT usage buckets (weekly + 5-hour), read locally with no extra login.
+- **Inline Account Editing:** Update a label or rotate an expired `sessionKey` directly from the settings list — changing the key automatically re-validates the account against Anthropic.
+- **Configurable Auto-Refresh:** Choose how often quotas sync in the background (every 5, 10, 15, 30, or 60 minutes). Quotas also refresh instantly whenever you open the widget, and whenever your local `~/.claude` data changes.
+- **Usage Alerts:** Get a native macOS notification the first time an account's 5-hour session crosses a threshold you pick (50%–95%), or switch alerts **Off**. Each account alerts once per session window and re-arms automatically after the session resets.
+- **Live Syncing & Isolation:** Connects directly to Anthropic's private web endpoints. Accounts are fetched concurrently; if a key expires or fails, the warning is isolated to that card without affecting other active accounts.
+- **Start a Session:** For an idle account, type a prompt and launch it straight into claude.ai in an embedded browser.
+- **Privacy First:** Your Claude session cookies are stored purely locally under `~/.claude/tracker-settings.json` and are transmitted only to Anthropic's endpoints.
+- **Retina-ready Tray Template:** A monochrome status-bar glyph that automatically adapts to light and dark macOS menu bars.
 
 ---
 
@@ -43,69 +45,55 @@ To sync live usage metrics, you'll need the `sessionKey` cookie value for each a
 
 ---
 
-## Installation & Setup 🛠️
+## Building & Running 🛠️
 
 ### Prerequisites
-- Node.js (v18 or higher)
-- npm
+- macOS 13.0 (Ventura) or newer
+- Xcode 16 or newer
 
-### 1. Install Dependencies
-Clone this repository to your local machine, open your terminal in the directory, and run:
+### Run from Xcode
+Clone the repository, then open the project and run it (⌘R):
 ```bash
-npm install
+open BurnTracker.xcodeproj
 ```
+The app mounts its monochrome glyph in the status bar. It runs as a menu-bar accessory with no Dock icon; quit it via the power button in the widget header.
 
-### 2. Start the App Locally
-To launch the widget instantly in development mode:
+### Build from the command line
 ```bash
-npm start
+xcodebuild -project BurnTracker.xcodeproj -scheme BurnTracker -configuration Release -destination 'platform=macOS' build
 ```
-The app will initialize and mount the monochrome burst icon in your status bar. You can close the window, and it will run in the background (the Dock icon automatically hides when minimized to status bar).
+The built `BurnTracker.app` is placed in Xcode's DerivedData `Build/Products/Release/` directory.
+
+> *Note: the app is signed to run locally without a paid Apple Developer certificate, so macOS Gatekeeper may show a verification warning on a distributed build. To bypass it on first run, Right-Click the `.app` bundle, select **Open**, and click **Open anyway**.*
 
 ---
 
-## Compiling Distribution Packages 📦
+## Project Structure 📂
 
-You can build standalone, optimized native binaries (`.app` and `.dmg`) that run natively on Apple Silicon and Intel-based Macs using `electron-builder`:
-
-Run the compiler:
-```bash
-npm run dist
-```
-
-Upon successful compilation, check your local `dist/` directory for:
-- **`dist/BurnTracker-1.0.0-arm64.dmg`**: Drag-and-drop installer window.
-- **`dist/BurnTracker-1.0.0-arm64-mac.zip`**: Standard compressed macOS application bundle.
-
-*Note: Since the bundle is built locally without an official paid Apple Developer certificate, macOS Gatekeeper might show a verification warning. To bypass this on first run, Right-Click the `.app` bundle, select **Open**, and click **Open anyway** in the dialog.*
-
----
-
-## File Structure 📂
+The Xcode project uses a **file-system-synchronized group**, so any file added under `BurnTracker/` is compiled automatically — no `project.pbxproj` edits needed.
 
 ```
-claude-tracker/
-├── assets/
-│   ├── app-icon.svg             # Cropped high-res master vector icon
-│   ├── icon.icns                # Multi-resolution macOS bundle icon
-│   ├── icon.png                 # Standard 1024x1024 application image
-│   ├── tray-iconTemplate.svg    # Vector template icon for status bar
-│   ├── tray-iconTemplate.png    # Pre-rasterized 18x18 template image
-│   └── tray-iconTemplate@2x.png # Pre-rasterized 36x36 Retina template image
-├── src/
-│   ├── index.html               # Main dashboard & settings HTML pane
-│   ├── styles.css               # Premium macOS Glassmorphism styles
-│   └── renderer.js              # Account states, API requests, & card rendering
-├── main.js                      # Electron main background process & Tray handlers
-├── preload.js                   # Secure IPC renderer bridge
-├── package.json                 # Project dependencies & build metadata
-└── README.md                    # Project documentation
+burnTracker/
+├── BurnTracker.xcodeproj/            # Xcode project
+├── BurnTracker/
+│   ├── BurnTrackerApp.swift          # @main App: MenuBarExtra + .accessory policy
+│   ├── AppState.swift                # @MainActor ObservableObject — state + coordination
+│   ├── Theme.swift                   # Color / design tokens
+│   ├── Models/                       # Account, QuotaData, AntigravityData, TrackerSettings
+│   ├── Services/                     # ClaudeService, AntigravityService, Persistence,
+│   │                                 #   FileWatcher, NotificationManager, SessionAutomation
+│   ├── Views/                        # RootView, Dashboard, cards, Settings, Components
+│   ├── Utilities/                    # TimeFormat
+│   └── Assets.xcassets/              # AppIcon, template MenuBarIcon, header icon
+├── assets/                           # Icon sources & preview image
+├── landing/                          # Marketing site (deployed via GitHub Pages)
+└── README.md
 ```
 
 ---
 
 ## Security & Privacy 🔒
 
-- All requests are initiated **directly** from your local machine to `claude.ai` endpoints.
-- No central server, tracking services, or intermediate proxy servers are used.
-- Keys are saved locally using standard JSON formatting in your home directory profile under `~/.claude/tracker-settings.json`.
+- All requests are initiated **directly** from your local machine to `claude.ai` (and, for Antigravity, your local CLI or Google's Cloud Code API).
+- No central server, tracking service, or intermediate proxy is used.
+- Keys are saved locally as standard JSON under `~/.claude/tracker-settings.json`. Session keys are stored in plaintext on disk — keep them local; they are never logged or sent anywhere except Anthropic.
