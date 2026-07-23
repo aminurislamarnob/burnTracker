@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import os.log
 
 /// Opens claude.ai in an embedded `WKWebView` with the account's session cookie
 /// injected, in an isolated (non-persistent) data store. The chat opens ready
@@ -10,6 +11,9 @@ final class SessionWindowController: NSObject {
 
     private var window: NSWindow?
     private var webView: WKWebView?
+    private var loadRetries = 0
+    private let maxLoadRetries = 3
+    private static let log = Logger(subsystem: "com.burntracker", category: "SessionWindow")
 
     @MainActor
     static func start(accountId: String, sessionKey: String) {
@@ -25,6 +29,7 @@ final class SessionWindowController: NSObject {
         config.websiteDataStore = .nonPersistent()
 
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 1024, height: 768), configuration: config)
+        web.navigationDelegate = self
         self.webView = web
 
         let win = NSWindow(
@@ -53,14 +58,59 @@ final class SessionWindowController: NSObject {
             .init(rawValue: "HttpOnly"): true
         ])
 
-        let load: () -> Void = { [weak web] in
-            web?.load(URLRequest(url: URL(string: "https://claude.ai/new")!))
+        guard let cookie else {
+            loadChat()
+            return
         }
 
-        if let cookie {
-            config.websiteDataStore.httpCookieStore.setCookie(cookie) { load() }
-        } else {
-            load()
+        // Set the cookie on the web view's *own* data store. A configuration is
+        // copied when handed to `WKWebView`, so `config.websiteDataStore` is not
+        // guaranteed to be the store the web view navigates with — writing the
+        // cookie there let claude.ai/new load unauthenticated (no chatbox).
+        web.configuration.websiteDataStore.httpCookieStore.setCookie(cookie) { [weak self] in
+            self?.loadChat()
+        }
+    }
+
+    @MainActor
+    private func loadChat() {
+        webView?.load(URLRequest(url: URL(string: "https://claude.ai/new")!))
+    }
+}
+
+extension SessionWindowController: WKNavigationDelegate {
+    // Retry transient load failures (network hiccup, slow cookie propagation)
+    // instead of leaving a blank window.
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        Self.log.error("provisional navigation failed: \(error.localizedDescription, privacy: .public)")
+        retryLoad(after: error)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        Self.log.error("navigation failed: \(error.localizedDescription, privacy: .public)")
+        retryLoad(after: error)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        loadRetries = 0
+    }
+
+    // The WebContent (renderer) process can be killed under memory pressure or
+    // by a crash, leaving the window blank with no automatic recovery. Reload
+    // the chat when that happens — the common cause of an intermittent blank window.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        Self.log.error("web content process terminated — reloading")
+        loadChat()
+    }
+
+    private func retryLoad(after error: Error) {
+        // Ignore user-initiated cancellations (e.g. redirects superseding a load).
+        if (error as NSError).code == NSURLErrorCancelled { return }
+        guard loadRetries < maxLoadRetries else { return }
+        loadRetries += 1
+        let delay = 0.5 * Double(loadRetries)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.loadChat()
         }
     }
 }
