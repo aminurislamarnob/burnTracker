@@ -56,22 +56,26 @@ enum TimeFormat {
         guard let raw, !raw.isEmpty else { return "—" }
 
         // If it parses as a date, format the remaining time compactly.
-        if let target = parseDate(raw) {
-            let diff = target.timeIntervalSinceNow
-            if diff <= 0 { return "any moment" }
-            let totalMin = Int(diff / 60)
-            let days = totalMin / 1440
-            let hrs = (totalMin % 1440) / 60
-            let mins = totalMin % 60
-            if days >= 1 { return hrs > 0 ? "in \(days)d \(hrs)h" : "in \(days)d" }
-            if hrs >= 1 { return "in \(hrs)h" }
-            return "in \(mins)m"
-        }
+        if let target = parseDate(raw) { return compactReset(target) }
 
         // Otherwise it's already a friendly duration ("5h", "6d 13h"): keep it.
         let lower = raw.lowercased()
         if lower.hasPrefix("in ") || lower == "any moment" || lower == "soon" { return raw }
         return "in \(raw)"
+    }
+
+    /// The same compact countdown, for providers that report an absolute reset
+    /// time rather than an ISO string (e.g. Command Code's epoch-millis windows).
+    static func compactReset(_ target: Date) -> String {
+        let diff = target.timeIntervalSinceNow
+        if diff <= 0 { return "any moment" }
+        let totalMin = Int(diff / 60)
+        let days = totalMin / 1440
+        let hrs = (totalMin % 1440) / 60
+        let mins = totalMin % 60
+        if days >= 1 { return hrs > 0 ? "in \(days)d \(hrs)h" : "in \(days)d" }
+        if hrs >= 1 { return "in \(hrs)h" }
+        return "in \(mins)m"
     }
 
     /// A short "how long ago" label, e.g. "just now", "3m ago", "2h ago".

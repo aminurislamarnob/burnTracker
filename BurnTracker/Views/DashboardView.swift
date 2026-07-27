@@ -34,6 +34,11 @@ struct DashboardView: View {
                         errorMessage: "Could not fetch Gemini CLI quota",
                         onRefresh: { Task { await app.refreshGemini() } })
                 }
+                if let cmd = app.commandCodeAccount {
+                    CommandCodeCardView(
+                        account: cmd,
+                        onRefresh: { Task { await app.refreshCommandCode() } })
+                }
                 if let ag = app.agAccount {
                     CliQuotaCardView(
                         title: "Antigravity",

@@ -17,6 +17,7 @@ final class AppState: ObservableObject {
     @Published var accounts: [Account] = []
     @Published var agAccount: CliAccount?
     @Published var geminiAccount: CliAccount?
+    @Published var commandCodeAccount: CommandCodeAccount?
     @Published var globalStatus: GlobalStatus = .offline
     /// CLI-wide Claude Code usage trend (local logs), shared across Claude cards.
     @Published var claudeUsageTrend: ClaudeUsageTrend?
@@ -47,9 +48,10 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// True when at least one provider (Claude, Antigravity, or Gemini CLI) is linked.
+    /// True when at least one provider (Claude, Antigravity, Gemini CLI, or
+    /// Command Code) is linked.
     var hasAnyAccount: Bool {
-        !accounts.isEmpty || agAccount != nil || geminiAccount != nil
+        !accounts.isEmpty || agAccount != nil || geminiAccount != nil || commandCodeAccount != nil
     }
 
     /// Called each time the menu-bar popover appears (the `window-shown`
@@ -70,6 +72,9 @@ final class AppState: ObservableObject {
         if let gem = settings.geminiAccount {
             geminiAccount = CliAccount(token: gem.token, email: gem.email, status: .offline)
         }
+        if let cmd = settings.commandCodeAccount {
+            commandCodeAccount = CommandCodeAccount(token: cmd.token, email: cmd.email, status: .offline)
+        }
         refreshMinutes = settings.refreshMinutes
         alertThreshold = settings.alertThreshold
     }
@@ -82,9 +87,11 @@ final class AppState: ObservableObject {
         }
         let ag = agAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
         let gem = geminiAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
+        let cmd = commandCodeAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
         let settings = TrackerSettings(accounts: persisted,
                                        agAccount: ag,
                                        geminiAccount: gem,
+                                       commandCodeAccount: cmd,
                                        refreshMinutes: refreshMinutes,
                                        alertThreshold: alertThreshold)
         Persistence.save(settings)
@@ -104,6 +111,7 @@ final class AppState: ObservableObject {
         for i in accounts.indices { accounts[i].status = .syncing }
         if agAccount != nil { agAccount?.status = .syncing }
         if geminiAccount != nil { geminiAccount?.status = .syncing }
+        if commandCodeAccount != nil { commandCodeAccount?.status = .syncing }
         updateGlobalStatus()
 
         await withTaskGroup(of: Void.self) { group in
@@ -124,6 +132,11 @@ final class AppState: ObservableObject {
             if geminiAccount != nil {
                 group.addTask { [weak self] in
                     await self?.refreshGemini()
+                }
+            }
+            if commandCodeAccount != nil {
+                group.addTask { [weak self] in
+                    await self?.refreshCommandCode()
                 }
             }
         }
@@ -207,6 +220,19 @@ final class AppState: ObservableObject {
         }
     }
 
+    func refreshCommandCode() async {
+        guard let token = commandCodeAccount?.token, !token.isEmpty else { return }
+        if let result = await CommandCodeService.fetchQuota() {
+            commandCodeAccount?.quota = result.quota
+            if let email = result.email { commandCodeAccount?.email = email }
+            commandCodeAccount?.lastFetch = Date()
+            commandCodeAccount?.status = .online
+            checkCommandCodeUsageAlert()
+        } else {
+            commandCodeAccount?.status = .error
+        }
+    }
+
     // MARK: - Notifications
 
     /// Edge-triggered: fires once when session usage first crosses the
@@ -260,6 +286,28 @@ final class AppState: ObservableObject {
         return max(0, 100 - lowestRemaining)
     }
 
+    /// Edge-triggered alert for Command Code. Its 5-hour window already reports
+    /// *usage* against a cap, so no conversion is needed. Plans without request
+    /// windows (`limited: false`) have no 5-hour lane and are skipped — their
+    /// only limit is the monthly credit pool.
+    private func checkCommandCodeUsageAlert() {
+        let threshold = alertThreshold
+        guard threshold > 0,
+              let acc = commandCodeAccount, acc.status == .online,
+              let usedPct = acc.quota?.fiveHour?.usedPct else { return }
+
+        if usedPct >= threshold {
+            if commandCodeAccount?.alertedHighUsage == false {
+                commandCodeAccount?.alertedHighUsage = true
+                NotificationManager.shared.notify(
+                    title: "Command Code — \(usedPct)% of 5-hour used",
+                    body: "Your Command Code 5-hour quota has crossed \(threshold)% usage.")
+            }
+        } else {
+            commandCodeAccount?.alertedHighUsage = false
+        }
+    }
+
     // MARK: - Global status
 
     private func aggregateGlobalStatus() {
@@ -273,6 +321,9 @@ final class AppState: ObservableObject {
         }
         if let gem = geminiAccount {
             if gem.status == .online { anySuccess = true } else { allSuccess = false }
+        }
+        if let cmd = commandCodeAccount {
+            if cmd.status == .online { anySuccess = true } else { allSuccess = false }
         }
         if allSuccess {
             globalStatus = .online
@@ -356,6 +407,25 @@ final class AppState: ObservableObject {
         aggregateGlobalStatus()
     }
 
+    // MARK: - Command Code linking
+
+    func linkCommandCode() async -> String? {
+        guard let creds = CommandCodeService.login() else {
+            return "Could not find ~/.commandcode/auth.json — run `cmd` and sign in first."
+        }
+        commandCodeAccount = CommandCodeAccount(token: creds.token, email: creds.email, status: .syncing)
+        saveToDisk()
+        await refreshCommandCode()
+        aggregateGlobalStatus()
+        return nil
+    }
+
+    func unlinkCommandCode() {
+        commandCodeAccount = nil
+        saveToDisk()
+        aggregateGlobalStatus()
+    }
+
     // MARK: - Settings
 
     func setRefreshMinutes(_ minutes: Int) {
@@ -371,12 +441,14 @@ final class AppState: ObservableObject {
         for i in accounts.indices { accounts[i].alertedHighUsage = false }
         agAccount?.alertedHighUsage = false
         geminiAccount?.alertedHighUsage = false
+        commandCodeAccount?.alertedHighUsage = false
         saveToDisk()
         for i in accounts.indices where accounts[i].status == .online {
             checkSessionUsageAlert(index: i)
         }
         checkCliUsageAlert(\.agAccount, providerName: "Antigravity")
         checkCliUsageAlert(\.geminiAccount, providerName: "Gemini CLI")
+        checkCommandCodeUsageAlert()
     }
 
     // MARK: - Session automation

@@ -20,11 +20,12 @@ BurnTracker/
   BurnTrackerApp.swift           @main App: MenuBarExtra(.window) + .accessory activation policy
   AppState.swift                 @MainActor ObservableObject — all view state + coordination
   Theme.swift                    color/design tokens
-  Models/                        Account, QuotaData, AntigravityData, TrackerSettings
-  Services/                      ClaudeService, AntigravityService, GeminiService, CliQuotaSupport,
-                                 Persistence, FileWatcher, NotificationManager, SessionAutomation
+  Models/                        Account, QuotaData, AntigravityData, CommandCodeData, TrackerSettings
+  Services/                      ClaudeService, AntigravityService, GeminiService, CommandCodeService,
+                                 CliQuotaSupport, Persistence, FileWatcher, NotificationManager,
+                                 SessionAutomation
   Views/                         RootView, DashboardView, AccountCardView, CliQuotaCardView,
-                                 SettingsView, Components
+                                 CommandCodeCardView, SettingsView, Components
   Utilities/TimeFormat.swift
   Assets.xcassets               AppIcon, MenuBarIcon (template), AppIconImage
 assets/  AppIcon.iconset/         icon sources (also used by the landing page)
@@ -33,10 +34,10 @@ landing/                          marketing site (deployed via .github/workflows
 
 ## Architecture
 
-A native SwiftUI macOS **menu-bar app** that displays Claude.ai usage quotas for multiple accounts, plus two **separate** CLI quota cards — Antigravity and Gemini CLI — each an independent provider with its own source, sync, and link/unlink. (Migrated from an Electron app; the JS/IPC layers no longer exist.)
+A native SwiftUI macOS **menu-bar app** that displays Claude.ai usage quotas for multiple accounts, plus three **separate** CLI quota cards — Antigravity, Gemini CLI, and Command Code — each an independent provider with its own source, sync, and link/unlink. (Migrated from an Electron app; the JS/IPC layers no longer exist.)
 
 - **`BurnTrackerApp.swift`** — the `@main` scene is a single `MenuBarExtra` with `.menuBarExtraStyle(.window)` (a popover-style window). An `NSApplicationDelegateAdaptor` sets `NSApp.setActivationPolicy(.accessory)` so there is no Dock icon, and calls `AppState.shared.onLaunch()` at startup so watchers/timer run before the popover is ever opened.
-- **`AppState`** (`@MainActor final class … ObservableObject`, singleton `AppState.shared`) — the single source of view state (`accounts`, `agAccount`, `geminiAccount`, `activeView`, `globalStatus`, `refreshMinutes`, `alertThreshold`) and all coordination logic. Views observe it via `@EnvironmentObject`.
+- **`AppState`** (`@MainActor final class … ObservableObject`, singleton `AppState.shared`) — the single source of view state (`accounts`, `agAccount`, `geminiAccount`, `commandCodeAccount`, `activeView`, `globalStatus`, `refreshMinutes`, `alertThreshold`) and all coordination logic. Views observe it via `@EnvironmentObject`.
 - **Services** are stateless enums/classes with `async` methods. There is no IPC boundary — networking, filesystem, and process calls run directly (no CORS/cookie restrictions to work around).
 
 ### Data flow & live quota fetching
@@ -57,11 +58,25 @@ Antigravity (the IDE) and the Gemini CLI are tracked **independently** — each 
 
 `CliQuotaSupport` holds everything both providers share: paths, email resolution, JWT/OAuth handling, the localhost-trust delegate, and the bucket parsers. Each provider still surfaces the same two model-family groups internally (**Gemini** and **Claude & GPT**), rendered by the shared `CliQuotaCardView`. The bucket-selection heuristics (weekly vs 5-hour, gemini vs claude/gpt) are load-bearing and undocumented — port them verbatim if refactoring.
 
+### Command Code quota (a third, differently-shaped provider)
+
+Command Code (the `cmd` CLI) is tracked independently via `commandCodeAccount`. It does **not** reuse `AGGroup`/`CliQuotaCardView`, because its quota model is different: it bills in **credits** (dollars against a monthly plan allowance), with optional 5-hour/weekly *request* windows on top. Hence its own `CommandCodeData` model and `CommandCodeCardView`.
+
+`CommandCodeService.fetchQuota()` reads the API key from `~/.commandcode/auth.json` and calls `https://api.commandcode.ai` with `Authorization: Bearer …`, mirroring the CLI's own `fetchUsageData` sequence: `/alpha/whoami` (email + org id) → `/alpha/billing/credits` + `/alpha/billing/subscriptions` in parallel → `/alpha/usage/summary?since={currentPeriodStart}`. The `orgId` param is omitted for personal accounts (`org: null`).
+
+Two things are **ports of the CLI's internals and must be kept in step** with it:
+- The per-plan monthly allowance table (`individual-go` = 10, `individual-pro` = 30, `individual-provider` = 15, `individual-max` = 150, `individual-ultra` = 300, `teams-pro` = 40) and the friendly names — the API returns a `planId` but never the allowance, so the pool is derived locally by longest-prefix match.
+- The credit projection in `project(...)`, a port of the CLI's `projectUsageView`. In particular the pool is `max(planAllowance, monthlyRemaining) + purchased + free` **only while the subscription is active**, else `spent + remaining`; that `max` is what makes the reported percentage match `cmd`'s own `/usage` view.
+
+`windowLimits` reports `used`/`cap` (absolute *usage*, unlike the other CLI providers' remaining fractions) and `resetAt` as **epoch milliseconds**, where `0` means the window has not started. `limited: false` means the plan enforces no request windows at all, and both lanes are dropped.
+
+The API key is **read fresh from `~/.commandcode/auth.json` on every fetch** and never copied into `tracker-settings.json` (which stores only the `"local-creds"` placeholder, as Antigravity/Gemini do) — so re-running `cmd login` is picked up automatically and the secret lives in exactly one place.
+
 ### Persistence
 
 State is stored as JSON in `~/.claude/tracker-settings.json` (`Persistence.swift`), the **same file and shape** as the original Electron build (drop-in compatible):
 - `accounts` — `{ id, label, sessionKey }`. Transient runtime fields (`status`, `quota`, `lastFetchTime`, `alertedHighUsage`) are stripped before writing in `AppState.saveToDisk()`.
-- `agAccount` (Antigravity) and `geminiAccount` (Gemini CLI) — each `{ token, email }`; plus `refreshMinutes` and `alertThreshold`. Legacy files with only `agAccount` still load (Antigravity); `geminiAccount` starts unlinked until the user links it.
+- `agAccount` (Antigravity), `geminiAccount` (Gemini CLI), and `commandCodeAccount` (Command Code) — each `{ token, email }`; plus `refreshMinutes` and `alertThreshold`. Every provider key is decoded optionally, so legacy files (e.g. with only `agAccount`) still load and the missing providers simply start unlinked.
 
 **Session keys are stored in plaintext** on disk — keep them local, never log them, and never transmit them anywhere except Claude.ai.
 
@@ -74,5 +89,5 @@ State is stored as JSON in `~/.claude/tracker-settings.json` (`Persistence.swift
 
 ### Notifications & session automation
 
-- `NotificationManager` (`UNUserNotificationCenter`) fires an **edge-triggered** alert once when a provider's 5-hour usage first crosses `alertThreshold`, re-arming only after it drops back below. This covers **all providers**: Claude accounts (`checkSessionUsageAlert`, using session utilization) and the CLI providers (`checkCliUsageAlert`, which converts each provider's *remaining* 5-hour fraction into usage = 100 − lowest-remaining lane). `alertThreshold` and `refreshMinutes` are **app-wide** settings (the "General" card in Settings), not Claude-scoped — the background timer's `refreshAll()` likewise re-syncs every provider.
+- `NotificationManager` (`UNUserNotificationCenter`) fires an **edge-triggered** alert once when a provider's 5-hour usage first crosses `alertThreshold`, re-arming only after it drops back below. This covers **all providers**: Claude accounts (`checkSessionUsageAlert`, using session utilization), Antigravity/Gemini (`checkCliUsageAlert`, which converts each provider's *remaining* 5-hour fraction into usage = 100 − lowest-remaining lane), and Command Code (`checkCommandCodeUsageAlert`, whose 5-hour window is already expressed as usage; plans with no window are skipped). `alertThreshold` and `refreshMinutes` are **app-wide** settings (the "General" card in Settings), not Claude-scoped — the background timer's `refreshAll()` likewise re-syncs every provider.
 - `SessionWindowController` (`SessionAutomation.swift`) opens `claude.ai/new` in a `WKWebView` with the account's `sessionKey` cookie injected into an isolated (non-persistent) data store. It only opens the chat, ready for input — the user types and sends their own message (no prompt automation). The earlier synthetic-input path (ProseMirror `execCommand`/input events to auto-send a prompt) was removed as unreliable.

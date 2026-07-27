@@ -7,6 +7,7 @@ struct SettingsView: View {
         VStack(spacing: 15) {
             claudeCard
             geminiCard
+            commandCodeCard
             antigravityCard
             generalCard
         }
@@ -18,7 +19,7 @@ struct SettingsView: View {
         Card {
             SettingsSectionTitle("Auto-Refresh")
             LabeledField("Background sync interval",
-                         help: "Applies to all providers — Claude, Gemini CLI, and Antigravity. Quotas also refresh instantly whenever you open the widget.") {
+                         help: "Applies to all providers — Claude, Gemini CLI, Command Code, and Antigravity. Quotas also refresh instantly whenever you open the widget.") {
                 Picker("", selection: Binding(
                     get: { app.refreshMinutes },
                     set: { app.setRefreshMinutes($0) })) {
@@ -35,7 +36,7 @@ struct SettingsView: View {
 
             SettingsSectionTitle("Notifications")
             LabeledField("Alert when 5-hour usage reaches",
-                         help: "Sends a macOS notification the first time any provider's 5-hour quota crosses this usage level. For Gemini CLI and Antigravity, usage is measured against their remaining quota.") {
+                         help: "Sends a macOS notification the first time any provider's 5-hour quota crosses this usage level. For Gemini CLI and Antigravity, usage is measured against their remaining quota; Command Code plans without a 5-hour window are not alerted.") {
                 Picker("", selection: Binding(
                     get: { app.alertThreshold },
                     set: { app.setAlertThreshold($0) })) {
@@ -123,6 +124,29 @@ struct SettingsView: View {
                 linkTitle: "Sync with Gemini CLI",
                 link: { await app.linkGemini() },
                 unlink: { app.unlinkGemini() })
+        }
+    }
+
+    // MARK: - Command Code card
+
+    private var commandCodeCard: some View {
+        Card {
+            SettingsSectionTitle("Command Code Account")
+            Text("Link your local Command Code CLI (cmd) to track credit and rate-limit usage from commandcode.ai.")
+                .font(.system(size: 12))
+                .foregroundColor(Theme.textMuted)
+                .padding(.bottom, 12)
+
+            Text(app.commandCodeAccount != nil ? "Linked (\(app.commandCodeAccount?.email ?? ""))" : "Not linked.")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Theme.textMain)
+                .padding(.bottom, 12)
+
+            CliLinkControls(
+                isLinked: app.commandCodeAccount != nil,
+                linkTitle: "Sync with Command Code",
+                link: { await app.linkCommandCode() },
+                unlink: { app.unlinkCommandCode() })
         }
     }
 

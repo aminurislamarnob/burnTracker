@@ -41,21 +41,25 @@ struct TrackerSettings: Codable {
     var agAccount: PersistedAg?
     /// The linked Gemini CLI account (Cloud Code API source).
     var geminiAccount: PersistedAg?
+    /// The linked Command Code account (`cmd` CLI, commandcode.ai API).
+    var commandCodeAccount: PersistedAg?
     var refreshMinutes: Int
     var alertThreshold: Int
 
     enum CodingKeys: String, CodingKey {
-        case accounts, agAccount, geminiAccount, refreshMinutes, alertThreshold
+        case accounts, agAccount, geminiAccount, commandCodeAccount, refreshMinutes, alertThreshold
     }
 
     init(accounts: [PersistedAccount] = [],
          agAccount: PersistedAg? = nil,
          geminiAccount: PersistedAg? = nil,
+         commandCodeAccount: PersistedAg? = nil,
          refreshMinutes: Int = 15,
          alertThreshold: Int = 80) {
         self.accounts = accounts
         self.agAccount = agAccount
         self.geminiAccount = geminiAccount
+        self.commandCodeAccount = commandCodeAccount
         self.refreshMinutes = refreshMinutes
         self.alertThreshold = alertThreshold
     }
@@ -65,6 +69,7 @@ struct TrackerSettings: Codable {
         accounts = (try? c.decode([PersistedAccount].self, forKey: .accounts)) ?? []
         agAccount = try? c.decode(PersistedAg.self, forKey: .agAccount)
         geminiAccount = try? c.decode(PersistedAg.self, forKey: .geminiAccount)
+        commandCodeAccount = try? c.decode(PersistedAg.self, forKey: .commandCodeAccount)
         refreshMinutes = (try? c.decode(Int.self, forKey: .refreshMinutes)) ?? 15
         alertThreshold = (try? c.decode(Int.self, forKey: .alertThreshold)) ?? 80
     }

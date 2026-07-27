@@ -69,3 +69,16 @@ struct CliAccount {
     /// Edge-trigger latch for the 5-hour usage alert (mirrors `Account`).
     var alertedHighUsage: Bool = false
 }
+
+/// A linked Command Code account (the `cmd` CLI). Its quota is credit-based
+/// rather than the remaining-fraction model families the other CLI providers
+/// expose, so it carries a `CommandCodeQuota` instead of `AGGroup`s.
+struct CommandCodeAccount {
+    var token: String
+    var email: String?
+    var status: SyncStatus = .offline
+    var quota: CommandCodeQuota?
+    var lastFetch: Date?
+    /// Edge-trigger latch for the 5-hour usage alert (mirrors `Account`).
+    var alertedHighUsage: Bool = false
+}
