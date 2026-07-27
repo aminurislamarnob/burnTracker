@@ -11,7 +11,8 @@ xcuserdata/
 # macOS / logs / local profiles
 .DS_Store
 *.log
-.claude
+.claude/*
+!.claude/skills/
 .gemini
 
 # Local reference material (not part of the app)
