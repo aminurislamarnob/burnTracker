@@ -23,8 +23,12 @@ struct VisualEffectView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: NSVisualEffectView, context: Context) {
-        view.material = material
-        view.blendingMode = blending
-        view.isEmphasized = emphasized
+        // Only assign when something actually changed. Re-setting `material`
+        // rebuilds the backing effect, so writing it unconditionally makes the
+        // vibrancy flicker on views that re-render every frame (e.g. a card
+        // being dragged).
+        if view.material != material { view.material = material }
+        if view.blendingMode != blending { view.blendingMode = blending }
+        if view.isEmphasized != emphasized { view.isEmphasized = emphasized }
     }
 }

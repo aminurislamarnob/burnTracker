@@ -47,10 +47,11 @@ struct TrackerSettings: Codable {
     var pinnedProvider: String?
     var refreshMinutes: Int
     var alertThreshold: Int
+    var cardOrder: [String]?
 
     enum CodingKeys: String, CodingKey {
         case accounts, agAccount, geminiAccount, commandCodeAccount, pinnedProvider
-        case refreshMinutes, alertThreshold
+        case refreshMinutes, alertThreshold, cardOrder
     }
 
     init(accounts: [PersistedAccount] = [],
@@ -59,7 +60,8 @@ struct TrackerSettings: Codable {
          commandCodeAccount: PersistedAg? = nil,
          pinnedProvider: String? = nil,
          refreshMinutes: Int = 15,
-         alertThreshold: Int = 80) {
+         alertThreshold: Int = 80,
+         cardOrder: [String]? = nil) {
         self.accounts = accounts
         self.agAccount = agAccount
         self.geminiAccount = geminiAccount
@@ -67,6 +69,7 @@ struct TrackerSettings: Codable {
         self.pinnedProvider = pinnedProvider
         self.refreshMinutes = refreshMinutes
         self.alertThreshold = alertThreshold
+        self.cardOrder = cardOrder
     }
 
     init(from decoder: Decoder) throws {
@@ -78,5 +81,6 @@ struct TrackerSettings: Codable {
         pinnedProvider = try? c.decode(String.self, forKey: .pinnedProvider)
         refreshMinutes = (try? c.decode(Int.self, forKey: .refreshMinutes)) ?? 15
         alertThreshold = (try? c.decode(Int.self, forKey: .alertThreshold)) ?? 80
+        cardOrder = try? c.decode([String].self, forKey: .cardOrder)
     }
 }

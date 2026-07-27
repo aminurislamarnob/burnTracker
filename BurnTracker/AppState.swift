@@ -25,6 +25,7 @@ final class AppState: ObservableObject {
     @Published var pinnedProvider: PinnedProvider?
     @Published var refreshMinutes: Int = 15
     @Published var alertThreshold: Int = 80
+    @Published var cardOrder: [String] = []
     @Published var lastSyncTime: Date?
 
     private var refreshTimer: Timer?
@@ -80,6 +81,9 @@ final class AppState: ObservableObject {
         pinnedProvider = settings.pinnedProvider.flatMap(PinnedProvider.init(token:))
         refreshMinutes = settings.refreshMinutes
         alertThreshold = settings.alertThreshold
+        if let order = settings.cardOrder {
+            cardOrder = order
+        }
         prunePinIfDangling()
     }
 
@@ -98,9 +102,53 @@ final class AppState: ObservableObject {
                                        commandCodeAccount: cmd,
                                        pinnedProvider: pinnedProvider?.token,
                                        refreshMinutes: refreshMinutes,
-                                       alertThreshold: alertThreshold)
+                                       alertThreshold: alertThreshold,
+                                       cardOrder: cardOrder)
         Persistence.save(settings)
         return true
+    }
+
+    // MARK: - Dashboard card ordering
+
+    /// The dashboard cards that currently have something to show, in the user's
+    /// saved order. Ids saved for cards that are no longer present are ignored,
+    /// and cards the user has never ordered are appended in their default order,
+    /// so the list is always exactly the set of cards the dashboard renders.
+    var visibleCardIDs: [String] {
+        var active: [String] = accounts.map { "claude_\($0.id)" }
+        if !accounts.isEmpty, let trend = claudeUsageTrend, !trend.days.isEmpty {
+            active.append("claudeTrend")
+        }
+        if geminiAccount != nil { active.append("gemini") }
+        if commandCodeAccount != nil { active.append("commandCode") }
+        if agAccount != nil { active.append("antigravity") }
+
+        var result = cardOrder.filter { active.contains($0) }
+        result.append(contentsOf: active.filter { !result.contains($0) })
+        return result
+    }
+
+    /// Adopts a new order for the *visible* cards. Ids that are saved but not
+    /// currently visible (typically `claudeTrend` before any local history
+    /// exists) are folded back in behind whichever visible card used to precede
+    /// them, so a reorder never silently forgets a hidden card's position.
+    func setCardOrder(_ visible: [String]) {
+        let hidden = cardOrder.filter { !visible.contains($0) }
+        guard !hidden.isEmpty else {
+            cardOrder = visible
+            return
+        }
+        var merged = visible
+        for id in hidden {
+            guard let old = cardOrder.firstIndex(of: id) else { continue }
+            let predecessor = cardOrder[..<old].last(where: { visible.contains($0) })
+            if let predecessor, let idx = merged.firstIndex(of: predecessor) {
+                merged.insert(id, at: idx + 1)
+            } else {
+                merged.insert(id, at: 0)
+            }
+        }
+        cardOrder = merged
     }
 
     // MARK: - Refresh triggers
