@@ -62,6 +62,9 @@ struct CompactCardHeader: View {
     /// Optional provider glyph (asset name) shown as a tinted badge before the title.
     var iconName: String? = nil
     var iconTint: Color = Theme.textMain
+    /// Menu-bar pin state. When `onTogglePin` is nil the pin control is hidden.
+    var isPinned: Bool = false
+    var onTogglePin: (() -> Void)? = nil
     let onRefresh: () -> Void
 
     var body: some View {
@@ -81,6 +84,13 @@ struct CompactCardHeader: View {
                         .foregroundColor(Theme.textMuted)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                }
+                if let onTogglePin {
+                    IconButton(systemName: isPinned ? "pin.fill" : "pin",
+                               help: isPinned ? "Unpin from menu bar" : "Pin to menu bar",
+                               size: 12,
+                               tint: isPinned ? Theme.accentHover : Theme.textMuted,
+                               action: onTogglePin)
                 }
                 IconButton(systemName: "arrow.clockwise", help: "Refresh \(title)", size: 12, action: onRefresh)
             }
@@ -145,13 +155,14 @@ struct IconButton: View {
     let systemName: String
     let help: String
     var size: CGFloat = 16
+    var tint: Color = Theme.textMuted
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: size * 0.8, weight: .semibold))
-                .foregroundColor(Theme.textMuted)
+                .foregroundColor(tint)
                 .frame(width: size + 12, height: size + 12)
         }
         .buttonStyle(.plain)

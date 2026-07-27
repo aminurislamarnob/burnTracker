@@ -20,12 +20,13 @@ BurnTracker/
   BurnTrackerApp.swift           @main App: MenuBarExtra(.window) + .accessory activation policy
   AppState.swift                 @MainActor ObservableObject — all view state + coordination
   Theme.swift                    color/design tokens
-  Models/                        Account, QuotaData, AntigravityData, CommandCodeData, TrackerSettings
+  Models/                        Account, QuotaData, AntigravityData, CommandCodeData,
+                                 PinnedProvider, TrackerSettings
   Services/                      ClaudeService, AntigravityService, GeminiService, CommandCodeService,
                                  CliQuotaSupport, Persistence, FileWatcher, NotificationManager,
                                  SessionAutomation
   Views/                         RootView, DashboardView, AccountCardView, CliQuotaCardView,
-                                 CommandCodeCardView, SettingsView, Components
+                                 CommandCodeCardView, MenuBarLabel, SettingsView, Components
   Utilities/TimeFormat.swift
   Assets.xcassets               AppIcon, MenuBarIcon (template), AppIconImage
 assets/  AppIcon.iconset/         icon sources (also used by the landing page)
@@ -36,8 +37,18 @@ landing/                          marketing site (deployed via .github/workflows
 
 A native SwiftUI macOS **menu-bar app** that displays Claude.ai usage quotas for multiple accounts, plus three **separate** CLI quota cards — Antigravity, Gemini CLI, and Command Code — each an independent provider with its own source, sync, and link/unlink. (Migrated from an Electron app; the JS/IPC layers no longer exist.)
 
-- **`BurnTrackerApp.swift`** — the `@main` scene is a single `MenuBarExtra` with `.menuBarExtraStyle(.window)` (a popover-style window). An `NSApplicationDelegateAdaptor` sets `NSApp.setActivationPolicy(.accessory)` so there is no Dock icon, and calls `AppState.shared.onLaunch()` at startup so watchers/timer run before the popover is ever opened.
-- **`AppState`** (`@MainActor final class … ObservableObject`, singleton `AppState.shared`) — the single source of view state (`accounts`, `agAccount`, `geminiAccount`, `commandCodeAccount`, `activeView`, `globalStatus`, `refreshMinutes`, `alertThreshold`) and all coordination logic. Views observe it via `@EnvironmentObject`.
+- **`BurnTrackerApp.swift`** — the `@main` scene is a single `MenuBarExtra` with `.menuBarExtraStyle(.window)` (a popover-style window). An `NSApplicationDelegateAdaptor` sets `NSApp.setActivationPolicy(.accessory)` so there is no Dock icon, and calls `AppState.shared.onLaunch()` at startup so watchers/timer run before the popover is ever opened. It holds `AppState.shared` as an `@ObservedObject` so the menu-bar label redraws when the pinned provider's usage changes.
+
+### Menu-bar pin
+
+The user can pin **one** provider (`PinnedProvider`: a Claude account by id, or Gemini / Antigravity / Command Code) so the menu bar shows its current 5-hour usage next to the glyph. `AppState.togglePin` sets or clears the single `pinnedProvider`, so one-at-a-time is a property of the model rather than UI bookkeeping; `pinnedSummary` resolves it to a label + percentage.
+
+Each provider reports "5-hour usage" differently: Claude uses `sessionUtilization`, Gemini/Antigravity reuse `fiveHourUsedPct` (100 − lowest remaining lane), and Command Code uses its 5-hour window — **falling back to `creditsUsedPct`** for plans with no request window (`limited: false`), which otherwise have no 5-hour signal at all.
+
+`MenuBarLabel.image(for:)` composites the glyph and text into a **single** template `NSImage`. This is deliberate: `MenuBarExtra`'s label does not reliably lay out a multi-view hierarchy, so drawing one image keeps the result predictable while `isTemplate = true` preserves light/dark menu-bar recoloring.
+
+The pin is persisted as a flat token string (`pinnedProvider`, e.g. `"claude:acc_123"`) and is **self-healing**: `prunePinIfDangling()` runs on load and after every account removal/unlink, so a pin pointing at a provider that no longer exists can never leave a stale reading in the menu bar.
+- **`AppState`** (`@MainActor final class … ObservableObject`, singleton `AppState.shared`) — the single source of view state (`accounts`, `agAccount`, `geminiAccount`, `commandCodeAccount`, `pinnedProvider`, `activeView`, `globalStatus`, `refreshMinutes`, `alertThreshold`) and all coordination logic. Views observe it via `@EnvironmentObject`.
 - **Services** are stateless enums/classes with `async` methods. There is no IPC boundary — networking, filesystem, and process calls run directly (no CORS/cookie restrictions to work around).
 
 ### Data flow & live quota fetching
@@ -76,7 +87,7 @@ The API key is **read fresh from `~/.commandcode/auth.json` on every fetch** and
 
 State is stored as JSON in `~/.claude/tracker-settings.json` (`Persistence.swift`), the **same file and shape** as the original Electron build (drop-in compatible):
 - `accounts` — `{ id, label, sessionKey }`. Transient runtime fields (`status`, `quota`, `lastFetchTime`, `alertedHighUsage`) are stripped before writing in `AppState.saveToDisk()`.
-- `agAccount` (Antigravity), `geminiAccount` (Gemini CLI), and `commandCodeAccount` (Command Code) — each `{ token, email }`; plus `refreshMinutes` and `alertThreshold`. Every provider key is decoded optionally, so legacy files (e.g. with only `agAccount`) still load and the missing providers simply start unlinked.
+- `agAccount` (Antigravity), `geminiAccount` (Gemini CLI), and `commandCodeAccount` (Command Code) — each `{ token, email }`; plus `refreshMinutes` and `alertThreshold`. Every provider key is decoded optionally, so legacy files (e.g. with only `agAccount`) still load and the missing providers simply start unlinked. `pinnedProvider` (the menu-bar pin token) is likewise optional.
 
 **Session keys are stored in plaintext** on disk — keep them local, never log them, and never transmit them anywhere except Claude.ai.
 

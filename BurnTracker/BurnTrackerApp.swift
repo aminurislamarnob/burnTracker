@@ -4,19 +4,19 @@ import AppKit
 @main
 struct BurnTrackerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    /// Observed so the menu-bar label redraws whenever the pinned provider's
+    /// usage changes (or the pin itself moves).
+    @ObservedObject private var app = AppState.shared
 
     var body: some Scene {
         MenuBarExtra {
             RootView()
-                .environmentObject(AppState.shared)
-                .onAppear { AppState.shared.onPopoverAppear() }
+                .environmentObject(app)
+                .onAppear { app.onPopoverAppear() }
         } label: {
-            // Template glyph adapts to light/dark menu bars.
-            if let img = NSImage(named: "MenuBarIcon") {
-                Image(nsImage: img)
-            } else {
-                Image(systemName: "flame")
-            }
+            // Template image adapts to light/dark menu bars. Carries the pinned
+            // provider's 5-hour usage when one is pinned.
+            Image(nsImage: MenuBarLabel.image(for: app.pinnedSummary))
         }
         .menuBarExtraStyle(.window)
     }

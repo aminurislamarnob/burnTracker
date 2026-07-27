@@ -19,6 +19,8 @@ struct ClaudeAccountCardView: View {
                 subtitle: "Claude.ai",
                 iconName: "ProviderIcon-claude",
                 iconTint: Theme.accent,
+                isPinned: app.isPinned(.claude(account.id)),
+                onTogglePin: { app.togglePin(.claude(account.id)) },
                 onRefresh: { Task { await app.refreshAccount(id: account.id) } })
                 .padding(.bottom, 10)
 

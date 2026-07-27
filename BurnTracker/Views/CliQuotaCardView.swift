@@ -13,6 +13,8 @@ struct CliQuotaCardView: View {
     let account: CliAccount
     /// Message shown when the fetch fails (source-specific).
     let errorMessage: String
+    var isPinned: Bool = false
+    var onTogglePin: (() -> Void)? = nil
     let onRefresh: () -> Void
 
     var body: some View {
@@ -24,6 +26,8 @@ struct CliQuotaCardView: View {
                 subtitle: subtitle,
                 iconName: iconName,
                 iconTint: tint,
+                isPinned: isPinned,
+                onTogglePin: onTogglePin,
                 onRefresh: onRefresh)
                 .padding(.bottom, 10)
 

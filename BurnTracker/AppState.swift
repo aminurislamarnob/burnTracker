@@ -21,6 +21,8 @@ final class AppState: ObservableObject {
     @Published var globalStatus: GlobalStatus = .offline
     /// CLI-wide Claude Code usage trend (local logs), shared across Claude cards.
     @Published var claudeUsageTrend: ClaudeUsageTrend?
+    /// The single provider pinned to the menu bar, if any.
+    @Published var pinnedProvider: PinnedProvider?
     @Published var refreshMinutes: Int = 15
     @Published var alertThreshold: Int = 80
     @Published var lastSyncTime: Date?
@@ -75,8 +77,10 @@ final class AppState: ObservableObject {
         if let cmd = settings.commandCodeAccount {
             commandCodeAccount = CommandCodeAccount(token: cmd.token, email: cmd.email, status: .offline)
         }
+        pinnedProvider = settings.pinnedProvider.flatMap(PinnedProvider.init(token:))
         refreshMinutes = settings.refreshMinutes
         alertThreshold = settings.alertThreshold
+        prunePinIfDangling()
     }
 
     @discardableResult
@@ -92,6 +96,7 @@ final class AppState: ObservableObject {
                                        agAccount: ag,
                                        geminiAccount: gem,
                                        commandCodeAccount: cmd,
+                                       pinnedProvider: pinnedProvider?.token,
                                        refreshMinutes: refreshMinutes,
                                        alertThreshold: alertThreshold)
         Persistence.save(settings)
@@ -308,6 +313,58 @@ final class AppState: ObservableObject {
         }
     }
 
+    // MARK: - Menu-bar pin
+
+    /// Pins a provider to the menu bar, or unpins it when it is already pinned.
+    /// Only one provider can be pinned at a time.
+    func togglePin(_ provider: PinnedProvider) {
+        pinnedProvider = (pinnedProvider == provider) ? nil : provider
+        saveToDisk()
+    }
+
+    func isPinned(_ provider: PinnedProvider) -> Bool {
+        pinnedProvider == provider
+    }
+
+    /// Drops a pin that points at a provider which is no longer linked, so the
+    /// menu bar never shows a stale reading.
+    private func prunePinIfDangling() {
+        guard let pin = pinnedProvider else { return }
+        let stillExists: Bool
+        switch pin {
+        case .claude(let id): stillExists = accounts.contains { $0.id == id }
+        case .gemini:         stillExists = geminiAccount != nil
+        case .antigravity:    stillExists = agAccount != nil
+        case .commandCode:    stillExists = commandCodeAccount != nil
+        }
+        if !stillExists { pinnedProvider = nil }
+    }
+
+    /// The label + 5-hour usage the menu bar shows for the pinned provider.
+    /// Nil when nothing is pinned or the provider has no reading yet, which
+    /// falls the menu bar back to the plain icon.
+    var pinnedSummary: PinnedSummary? {
+        guard let pin = pinnedProvider else { return nil }
+        switch pin {
+        case .claude(let id):
+            guard let acc = accounts.first(where: { $0.id == id }),
+                  let quota = acc.quota else { return nil }
+            return PinnedSummary(label: acc.label, percent: quota.sessionUtilization)
+        case .gemini:
+            guard let acc = geminiAccount, let pct = fiveHourUsedPct(acc) else { return nil }
+            return PinnedSummary(label: "Gemini", percent: pct)
+        case .antigravity:
+            guard let acc = agAccount, let pct = fiveHourUsedPct(acc) else { return nil }
+            return PinnedSummary(label: "Antigravity", percent: pct)
+        case .commandCode:
+            guard let quota = commandCodeAccount?.quota else { return nil }
+            // Plans with no request window still have the monthly credit pool,
+            // which is the only usage signal they expose.
+            let pct = quota.fiveHour?.usedPct ?? quota.creditsUsedPct
+            return PinnedSummary(label: "Command Code", percent: pct)
+        }
+    }
+
     // MARK: - Global status
 
     private func aggregateGlobalStatus() {
@@ -365,6 +422,7 @@ final class AppState: ObservableObject {
 
     func removeAccount(id: String) {
         accounts.removeAll { $0.id == id }
+        prunePinIfDangling()
         saveToDisk()
         aggregateGlobalStatus()
     }
@@ -384,6 +442,7 @@ final class AppState: ObservableObject {
 
     func unlinkAntigravity() {
         agAccount = nil
+        prunePinIfDangling()
         saveToDisk()
         aggregateGlobalStatus()
     }
@@ -403,6 +462,7 @@ final class AppState: ObservableObject {
 
     func unlinkGemini() {
         geminiAccount = nil
+        prunePinIfDangling()
         saveToDisk()
         aggregateGlobalStatus()
     }
@@ -422,6 +482,7 @@ final class AppState: ObservableObject {
 
     func unlinkCommandCode() {
         commandCodeAccount = nil
+        prunePinIfDangling()
         saveToDisk()
         aggregateGlobalStatus()
     }

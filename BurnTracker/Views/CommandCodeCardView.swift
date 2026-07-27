@@ -9,6 +9,8 @@ import SwiftUI
 /// `CliQuotaCardView` — the API reports spend and usage counts directly.
 struct CommandCodeCardView: View {
     let account: CommandCodeAccount
+    var isPinned: Bool = false
+    var onTogglePin: (() -> Void)? = nil
     let onRefresh: () -> Void
 
     var body: some View {
@@ -20,6 +22,8 @@ struct CommandCodeCardView: View {
                 subtitle: planLine,
                 iconName: "ProviderIcon-commandcode",
                 iconTint: Theme.commandCodeTint,
+                isPinned: isPinned,
+                onTogglePin: onTogglePin,
                 onRefresh: onRefresh)
                 .padding(.bottom, 10)
 

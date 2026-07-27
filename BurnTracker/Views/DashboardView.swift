@@ -32,11 +32,15 @@ struct DashboardView: View {
                         iconName: "ProviderIcon-gemini",
                         account: gemini,
                         errorMessage: "Could not fetch Gemini CLI quota",
+                        isPinned: app.isPinned(.gemini),
+                        onTogglePin: { app.togglePin(.gemini) },
                         onRefresh: { Task { await app.refreshGemini() } })
                 }
                 if let cmd = app.commandCodeAccount {
                     CommandCodeCardView(
                         account: cmd,
+                        isPinned: app.isPinned(.commandCode),
+                        onTogglePin: { app.togglePin(.commandCode) },
                         onRefresh: { Task { await app.refreshCommandCode() } })
                 }
                 if let ag = app.agAccount {
@@ -47,6 +51,8 @@ struct DashboardView: View {
                         iconName: "ProviderIcon-antigravity",
                         account: ag,
                         errorMessage: "Could not fetch local Antigravity quota (is the Antigravity app running?)",
+                        isPinned: app.isPinned(.antigravity),
+                        onTogglePin: { app.togglePin(.antigravity) },
                         onRefresh: { Task { await app.refreshAntigravity() } })
                 }
             }

@@ -43,23 +43,28 @@ struct TrackerSettings: Codable {
     var geminiAccount: PersistedAg?
     /// The linked Command Code account (`cmd` CLI, commandcode.ai API).
     var commandCodeAccount: PersistedAg?
+    /// Token of the provider pinned to the menu bar (see `PinnedProvider`).
+    var pinnedProvider: String?
     var refreshMinutes: Int
     var alertThreshold: Int
 
     enum CodingKeys: String, CodingKey {
-        case accounts, agAccount, geminiAccount, commandCodeAccount, refreshMinutes, alertThreshold
+        case accounts, agAccount, geminiAccount, commandCodeAccount, pinnedProvider
+        case refreshMinutes, alertThreshold
     }
 
     init(accounts: [PersistedAccount] = [],
          agAccount: PersistedAg? = nil,
          geminiAccount: PersistedAg? = nil,
          commandCodeAccount: PersistedAg? = nil,
+         pinnedProvider: String? = nil,
          refreshMinutes: Int = 15,
          alertThreshold: Int = 80) {
         self.accounts = accounts
         self.agAccount = agAccount
         self.geminiAccount = geminiAccount
         self.commandCodeAccount = commandCodeAccount
+        self.pinnedProvider = pinnedProvider
         self.refreshMinutes = refreshMinutes
         self.alertThreshold = alertThreshold
     }
@@ -70,6 +75,7 @@ struct TrackerSettings: Codable {
         agAccount = try? c.decode(PersistedAg.self, forKey: .agAccount)
         geminiAccount = try? c.decode(PersistedAg.self, forKey: .geminiAccount)
         commandCodeAccount = try? c.decode(PersistedAg.self, forKey: .commandCodeAccount)
+        pinnedProvider = try? c.decode(String.self, forKey: .pinnedProvider)
         refreshMinutes = (try? c.decode(Int.self, forKey: .refreshMinutes)) ?? 15
         alertThreshold = (try? c.decode(Int.self, forKey: .alertThreshold)) ?? 80
     }
