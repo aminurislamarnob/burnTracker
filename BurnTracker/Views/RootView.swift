@@ -37,7 +37,7 @@ struct RootView: View {
             Divider().overlay(Theme.border)
             footer
         }
-        .frame(width: 400)
+        .frame(width: 430)
         .background {
             // Native macOS vibrancy behind the whole popover, with a slight dark
             // tint over it so content stays legible on bright desktops.
