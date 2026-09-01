@@ -85,6 +85,23 @@ struct ClaudeAccountCardView: View {
                 rightText: quota?.weeklyResetsAt != nil
                     ? "Resets \(TimeFormat.compactReset(quota?.weeklyResetsAt))" : "Resets weekly")
 
+            // Per-model weekly caps (e.g. Fable), one bar each, shown only for
+            // accounts whose plan actually has a model-scoped weekly limit.
+            ForEach(quota?.modelWeeklyLimits ?? []) { limit in
+                let modelPct = limit.percentInt
+                let model = limit.modelName ?? "Model"
+                let pin = PinnedProvider.claudeModelWeekly(accountId: account.id, model: model)
+                CompactQuotaRow(
+                    title: "\(model) Weekly Limit",
+                    percent: modelPct,
+                    tint: usedTint(modelPct, base: Theme.modelLimitTint),
+                    leftText: "\(modelPct)% used",
+                    rightText: limit.resetsAt != nil
+                        ? "Resets \(TimeFormat.compactReset(limit.resetsAt))" : "Resets weekly",
+                    isPinned: app.isPinned(pin),
+                    onTogglePin: { app.togglePin(pin) })
+            }
+
             // Purchased-credit ("extra usage") bar — Claude only, and only when
             // the account has an active extra-usage budget.
             if let extra = quota?.extraUsage, extra.isEnabled {

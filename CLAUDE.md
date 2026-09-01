@@ -41,13 +41,15 @@ A native SwiftUI macOS **menu-bar app** that displays Claude.ai usage quotas for
 
 ### Menu-bar pin
 
-The user can pin **one** provider (`PinnedProvider`: a Claude account by id, or Gemini / Antigravity / Command Code) so the menu bar shows its current 5-hour usage next to the glyph. `AppState.togglePin` sets or clears the single `pinnedProvider`, so one-at-a-time is a property of the model rather than UI bookkeeping; `pinnedSummary` resolves it to a label + percentage.
+The user can pin **one** reading (`PinnedProvider`: a Claude account by id, one Claude account's model-scoped weekly cap, or Gemini / Antigravity / Command Code) so the menu bar shows it next to the glyph. `AppState.togglePin` sets or clears the single `pinnedProvider`, so one-at-a-time is a property of the model rather than UI bookkeeping; `pinnedSummary` resolves it to a label + percentage.
 
 Each provider reports "5-hour usage" differently: Claude uses `sessionUtilization`, Gemini/Antigravity reuse `fiveHourUsedPct` (100 − lowest remaining lane), and Command Code uses its 5-hour window — **falling back to `creditsUsedPct`** for plans with no request window (`limited: false`), which otherwise have no 5-hour signal at all.
 
+`.claudeModelWeekly` is the one case that pins a **weekly** figure rather than a 5-hour one — it reads the matching `modelWeeklyLimits` entry (see below). Its pin control lives on the quota row itself (`CompactQuotaRow.onTogglePin`), not the card header, since a card can carry several scoped caps.
+
 `MenuBarLabel.image(for:)` composites the glyph and text into a **single** template `NSImage`. This is deliberate: `MenuBarExtra`'s label does not reliably lay out a multi-view hierarchy, so drawing one image keeps the result predictable while `isTemplate = true` preserves light/dark menu-bar recoloring.
 
-The pin is persisted as a flat token string (`pinnedProvider`, e.g. `"claude:acc_123"`) and is **self-healing**: `prunePinIfDangling()` runs on load and after every account removal/unlink, so a pin pointing at a provider that no longer exists can never leave a stale reading in the menu bar.
+The pin is persisted as a flat token string (`pinnedProvider`, e.g. `"claude:acc_123"`, `"claude-model:acc_123:Fable"`) and is **self-healing**: `prunePinIfDangling()` runs on load and after every account removal/unlink, so a pin pointing at a provider that no longer exists can never leave a stale reading in the menu bar. A model pin prunes on the **account** only — `quota` is transient and nil at launch, so testing for the cap itself would drop the pin before the first fetch; a cap that genuinely vanishes instead yields no `pinnedSummary`, which already falls back to the plain glyph.
 - **`AppState`** (`@MainActor final class … ObservableObject`, singleton `AppState.shared`) — the single source of view state (`accounts`, `agAccount`, `geminiAccount`, `commandCodeAccount`, `pinnedProvider`, `activeView`, `globalStatus`, `refreshMinutes`, `alertThreshold`) and all coordination logic. Views observe it via `@EnvironmentObject`.
 - **Services** are stateless enums/classes with `async` methods. There is no IPC boundary — networking, filesystem, and process calls run directly (no CORS/cookie restrictions to work around).
 
@@ -58,6 +60,14 @@ The live quota path is the core feature. `ClaudeService.fetchLiveLimits(sessionK
 2. GET `https://claude.ai/api/organizations/{orgId}/usage` for the rate-limit payload.
 
 `QuotaData`/`UsageWindow` decoding normalizes both snake_case and camelCase shapes (`five_hour`/`fiveHour`, `seven_day`/`sevenDay`, `resets_at`/`resetsAt`) via custom `init(from:)` — **preserve this dual handling** when touching quota parsing, as the upstream private API field naming is not guaranteed. Accounts are fetched concurrently (`withTaskGroup`); a failed/expired key sets only that account's `status` to `.error`, and `globalStatus` aggregates to `.online`/`.warning`/`.error`.
+
+#### Per-model weekly caps (`limits`)
+
+The usage payload also carries a newer, self-describing `limits` array alongside the legacy top-level windows. Model-scoped weekly caps live **only** there: an entry with `kind: "weekly_scoped"`, `group: "weekly"` and `scope.model.display_name` (e.g. `"Fable"`). The older `seven_day_opus`/`seven_day_sonnet` keys now always decode as `null`, so they are not a substitute.
+
+`RateLimitEntry` decodes those entries and `QuotaData.modelWeeklyLimits` filters them to the model-scoped weekly ones, which `ClaudeAccountCardView` renders as one extra bar per model under the all-models "Weekly Limit". The list is **empty for plans without model access**, so the row simply does not appear — never synthesize a 0% bar for a cap the account does not have. Match on `scope.model.display_name` rather than hard-coding "Fable", so a new scoped model surfaces on its own.
+
+Each cap is independently **pinnable** (`PinnedProvider.claudeModelWeekly`) and **alertable**: `checkModelWeeklyAlerts` edge-triggers per cap against the same app-wide `alertThreshold`, latching on `Account.alertedModelWeekly` — a `Set` of model names rather than the single `alertedHighUsage` Bool, so Fable firing never disarms another model's alert. Latches for caps that disappear from the payload are dropped, so the alert re-arms if the model returns. The percentages here are already *usage* (like Claude's session, unlike the CLI providers' remaining fractions), so no conversion is needed.
 
 Services return `Result`/optionals rather than throwing across a boundary; `AppState` branches on success and updates the matching account by `id`.
 

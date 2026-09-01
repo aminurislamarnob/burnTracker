@@ -219,6 +219,7 @@ final class AppState: ObservableObject {
             accounts[idx].status = .online
             accounts[idx].errorMsg = nil
             checkSessionUsageAlert(index: idx)
+            checkModelWeeklyAlerts(index: idx)
         case .failure(let error):
             accounts[idx].quota = nil
             accounts[idx].status = .error
@@ -307,6 +308,36 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Edge-triggered alert for each model-scoped weekly cap (e.g. Fable), which
+    /// the API already reports as *usage*, so no conversion is needed. Latched
+    /// per model name, and only for caps the account actually has — a plan
+    /// without the model reports no entry and is therefore never alerted on.
+    private func checkModelWeeklyAlerts(index: Int) {
+        let threshold = alertThreshold
+        guard threshold > 0 else { return }
+        let limits = accounts[index].quota?.modelWeeklyLimits ?? []
+
+        for limit in limits {
+            guard let model = limit.modelName else { continue }
+            let pct = limit.percentInt
+            if pct >= threshold {
+                if !accounts[index].alertedModelWeekly.contains(model) {
+                    accounts[index].alertedModelWeekly.insert(model)
+                    NotificationManager.shared.notify(
+                        title: "\(accounts[index].label) — \(pct)% of \(model) weekly used",
+                        body: "Your weekly \(model) limit has crossed \(threshold)% usage.")
+                }
+            } else {
+                accounts[index].alertedModelWeekly.remove(model)
+            }
+        }
+
+        // Drop latches for caps the account no longer reports, so the alert
+        // re-arms if the model comes back.
+        let present = Set(limits.compactMap(\.modelName))
+        accounts[index].alertedModelWeekly.formIntersection(present)
+    }
+
     /// Edge-triggered alert for a CLI provider's 5-hour lane. The threshold is
     /// expressed as *usage* (matching Claude), so we convert the provider's
     /// *remaining* fraction: used = 100 − (lowest remaining 5-hour bucket).
@@ -381,6 +412,12 @@ final class AppState: ObservableObject {
         let stillExists: Bool
         switch pin {
         case .claude(let id): stillExists = accounts.contains { $0.id == id }
+        // Keyed on the account only: quota is transient and still nil at launch,
+        // so testing for the cap itself would drop the pin before the first
+        // fetch. A cap that genuinely disappears yields no `pinnedSummary`,
+        // which already falls the menu bar back to the plain glyph.
+        case .claudeModelWeekly(let id, _):
+            stillExists = accounts.contains { $0.id == id }
         case .gemini:         stillExists = geminiAccount != nil
         case .antigravity:    stillExists = agAccount != nil
         case .commandCode:    stillExists = commandCodeAccount != nil
@@ -388,7 +425,9 @@ final class AppState: ObservableObject {
         if !stillExists { pinnedProvider = nil }
     }
 
-    /// The label + 5-hour usage the menu bar shows for the pinned provider.
+    /// The label + usage the menu bar shows for the pinned reading — a
+    /// provider's 5-hour session, or a model-scoped weekly cap when one is
+    /// pinned instead.
     /// Nil when nothing is pinned or the provider has no reading yet, which
     /// falls the menu bar back to the plain icon.
     var pinnedSummary: PinnedSummary? {
@@ -398,6 +437,11 @@ final class AppState: ObservableObject {
             guard let acc = accounts.first(where: { $0.id == id }),
                   let quota = acc.quota else { return nil }
             return PinnedSummary(label: acc.label, percent: quota.sessionUtilization)
+        case .claudeModelWeekly(let id, let model):
+            guard let acc = accounts.first(where: { $0.id == id }),
+                  let limit = acc.quota?.modelWeeklyLimits.first(where: { $0.modelName == model })
+            else { return nil }
+            return PinnedSummary(label: model, percent: limit.percentInt)
         case .gemini:
             guard let acc = geminiAccount, let pct = fiveHourUsedPct(acc) else { return nil }
             return PinnedSummary(label: "Gemini", percent: pct)
@@ -547,13 +591,17 @@ final class AppState: ObservableObject {
     func setAlertThreshold(_ threshold: Int) {
         alertThreshold = threshold
         // Re-arm so a new threshold can fire against current usage.
-        for i in accounts.indices { accounts[i].alertedHighUsage = false }
+        for i in accounts.indices {
+            accounts[i].alertedHighUsage = false
+            accounts[i].alertedModelWeekly.removeAll()
+        }
         agAccount?.alertedHighUsage = false
         geminiAccount?.alertedHighUsage = false
         commandCodeAccount?.alertedHighUsage = false
         saveToDisk()
         for i in accounts.indices where accounts[i].status == .online {
             checkSessionUsageAlert(index: i)
+            checkModelWeeklyAlerts(index: i)
         }
         checkCliUsageAlert(\.agAccount, providerName: "Antigravity")
         checkCliUsageAlert(\.geminiAccount, providerName: "Gemini CLI")

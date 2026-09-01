@@ -100,14 +100,72 @@ struct ExtraUsage: Decodable {
     }
 }
 
+/// One entry from the `limits` array in the Claude usage payload — the newer,
+/// self-describing shape that sits alongside the legacy `five_hour`/`seven_day`
+/// keys. A `weekly_scoped` entry carries `scope.model.display_name` (e.g.
+/// "Fable"), which is how per-model weekly caps are surfaced now that the older
+/// `seven_day_opus`-style keys always decode as null. Accounts whose plan has
+/// no model-scoped cap simply omit the entry.
+struct RateLimitEntry: Decodable, Identifiable {
+    var kind: String
+    var group: String?
+    var percent: Double
+    var resetsAt: String?
+    /// `scope.model.display_name`, when the limit is scoped to one model.
+    var modelName: String?
+    var isActive: Bool
+
+    var id: String { "\(kind)|\(modelName ?? "")" }
+
+    /// Utilization as a rounded percentage, matching `UsageWindow` semantics.
+    var percentInt: Int { Int(percent.rounded()) }
+
+    enum CodingKeys: String, CodingKey {
+        case kind, group, percent, scope
+        case resets_at, resetsAt
+        case is_active, isActive
+    }
+
+    private enum ScopeKeys: String, CodingKey {
+        case model
+    }
+
+    private enum ModelKeys: String, CodingKey {
+        case display_name, displayName
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kind = (try? c.decode(String.self, forKey: .kind)) ?? ""
+        group = try? c.decode(String.self, forKey: .group)
+        percent = (try? c.decode(Double.self, forKey: .percent)) ?? 0
+        resetsAt = (try? c.decode(String.self, forKey: .resets_at))
+            ?? (try? c.decode(String.self, forKey: .resetsAt))
+        isActive = (try? c.decode(Bool.self, forKey: .is_active))
+            ?? (try? c.decode(Bool.self, forKey: .isActive)) ?? false
+
+        if let scope = try? c.nestedContainer(keyedBy: ScopeKeys.self, forKey: .scope),
+           let model = try? scope.nestedContainer(keyedBy: ModelKeys.self, forKey: .model) {
+            let name = (try? model.decode(String.self, forKey: .display_name))
+                ?? (try? model.decode(String.self, forKey: .displayName))
+            modelName = (name?.isEmpty == false) ? name : nil
+        } else {
+            modelName = nil
+        }
+    }
+}
+
 /// The rate-limit payload from `GET /api/organizations/{orgId}/usage`.
 /// Preserves the dual snake_case/camelCase handling from `src/renderer.js`.
 struct QuotaData: Decodable {
     var fiveHour: UsageWindow?
     var sevenDay: UsageWindow?
     var extraUsage: ExtraUsage?
+    /// The newer self-describing limit list; empty when the API omits it.
+    var limits: [RateLimitEntry]
 
     enum CodingKeys: String, CodingKey {
+        case limits
         case five_hour
         case fiveHour
         case seven_day
@@ -124,6 +182,7 @@ struct QuotaData: Decodable {
             ?? (try? c.decode(UsageWindow.self, forKey: .sevenDay))
         extraUsage = (try? c.decode(ExtraUsage.self, forKey: .extra_usage))
             ?? (try? c.decode(ExtraUsage.self, forKey: .extraUsage))
+        limits = (try? c.decode([RateLimitEntry].self, forKey: .limits)) ?? []
     }
 
     /// Current 5-hour session utilization as a rounded percentage.
@@ -140,4 +199,14 @@ struct QuotaData: Decodable {
     }
 
     var weeklyResetsAt: String? { sevenDay?.resetsAt }
+
+    /// Per-model weekly caps (e.g. Fable) in payload order — one bar each,
+    /// alongside the all-models weekly limit. Empty on plans that have no
+    /// model-scoped weekly cap, so the extra rows appear only where they exist.
+    var modelWeeklyLimits: [RateLimitEntry] {
+        limits.filter { entry in
+            guard entry.modelName != nil else { return false }
+            return entry.group == "weekly" || entry.kind.hasPrefix("weekly")
+        }
+    }
 }

@@ -32,6 +32,10 @@ struct Account: Identifiable {
     var lastFetchTime: Date?
     var errorMsg: String?
     var alertedHighUsage: Bool = false
+    /// Edge-trigger latches for the model-scoped weekly caps, keyed by the API's
+    /// model display name — one latch per cap, so Fable crossing the threshold
+    /// never disarms a later alert for another scoped model.
+    var alertedModelWeekly: Set<String> = []
 
     init(id: String = "acc_\(Int(Date().timeIntervalSince1970 * 1000))",
          label: String,

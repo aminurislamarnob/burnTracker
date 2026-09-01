@@ -32,6 +32,9 @@ enum Theme {
     /// Purchased-credit ("extra usage") bar — amber/gold to read as spend.
     static let creditTint = Color(hex: 0xE0A63C)
 
+    /// Per-model weekly caps (e.g. Fable) — distinct from the all-models bar.
+    static let modelLimitTint = Color(hex: 0xBF5AF2)
+
     /// A subtler divider used between compact flat rows.
     static let hairline = Color.white.opacity(0.06)
 

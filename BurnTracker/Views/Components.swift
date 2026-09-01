@@ -30,12 +30,29 @@ struct CompactQuotaRow: View {
     let tint: Color
     let leftText: String
     let rightText: String
+    /// Menu-bar pin state for this individual row. When `onTogglePin` is nil the
+    /// pin control is hidden and the row keeps its original height — rows whose
+    /// reading is not independently pinnable are unaffected.
+    var isPinned: Bool = false
+    var onTogglePin: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(Theme.textMain)
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(Theme.textMain)
+                if let onTogglePin {
+                    Spacer(minLength: 8)
+                    IconButton(systemName: isPinned ? "pin.fill" : "pin",
+                               help: isPinned ? "Unpin from menu bar" : "Pin to menu bar",
+                               size: 11,
+                               tint: isPinned ? Theme.accentHover : Theme.textMuted,
+                               action: onTogglePin)
+                        // Keeps the taller tap target from stretching the row.
+                        .padding(.vertical, -4)
+                }
+            }
 
             CompactBar(percent: percent, tint: tint)
 
