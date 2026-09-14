@@ -1,6 +1,6 @@
 ---
 name: release
-description: Ship a new BurnTracker version — bump the version, build the .dmg, cut the GitHub release, and update the landing page (feature copy + download links). Use when asked to "release", "cut a release", "ship vX.Y.Z", "update the branch", "publish the new version", or to point the landing page at a new build.
+description: Ship a new BurnTracker version — bump the version, build the .dmg, cut the GitHub release, and update the landing page (feature copy + download links) in the separate aminurislam.me repo. Use when asked to "release", "cut a release", "ship vX.Y.Z", "update the branch", "publish the new version", or to point the landing page at a new build.
 ---
 
 # Releasing BurnTracker
@@ -16,6 +16,13 @@ the one before it:
 Step 4 must come after step 3 or the live site's Download buttons 404 until the
 release exists. Never push a landing-page version bump for a release you have not
 created yet.
+
+**The landing page is not in this repo.** It lives at
+<https://aminurislam.me/burn-tracker> in the portfolio repo
+**`aminurislamarnob/aminurislam.me`**. Step 4 is a separate clone, branch, commit
+and deploy; steps 0–3 never touch it. (This repo had a `landing/` directory and a
+GitHub Pages workflow until the page moved — if you find references to either,
+they are stale.)
 
 ## 0. Preflight
 
@@ -116,24 +123,41 @@ Write the "What's new" bullets from the actual commits since the last tag
 feature name, then explain. Skip pure refactors; mention a fix only if the user
 would have noticed the bug.
 
-## 4. Update the landing page
+## 4. Update the landing page (separate repo)
 
-`landing/index.html` is the whole site (plus `styles.css`). Two separate jobs:
+| | |
+|---|---|
+| Repo | `aminurislamarnob/aminurislam.me` |
+| Local clone | `~/Herd/aiarnob-nuxt-app` — **the folder name is the repo's old name**, don't go looking for `aminurislam.me/` |
+| Branch | `production` (there is no `main`) |
+| Page | `app/components/Products/BurnTracker.vue` — one component holds the whole page |
+| URL | <https://aminurislam.me/burn-tracker> |
+
+It is a Nuxt 4 static site, not the hand-written HTML this repo used to carry.
+Node 22 (`nvm use`), `npm`, and `npx nuxi generate` to build.
+
+```bash
+cd ~/Herd/aiarnob-nuxt-app
+git checkout production && git pull --ff-only
+```
 
 ### 4a. Download links — always
 
-Three `href`s and one version badge, all of which must move together:
+Four constants at the top of the `<script setup>` block. `version` and `dmgUrl`
+**must move together** — the `.dmg` is a versioned release asset, so a bumped
+version against a stale URL 404s:
 
 ```bash
-sed -i '' 's|releases/download/v2\.3\.1/BurnTracker-2\.3\.1\.dmg|releases/download/v2.4.0/BurnTracker-2.4.0.dmg|g; \
-           s|<span class="btn-ver">v2\.3\.1</span>|<span class="btn-ver">v2.4.0</span>|g' \
-  landing/index.html
+sed -i '' 's/const version = "2\.3\.1"/const version = "2.4.0"/; \
+           s|releases/download/v2\.3\.1/BurnTracker-2\.3\.1\.dmg|releases/download/v2.4.0/BurnTracker-2.4.0.dmg|' \
+  app/components/Products/BurnTracker.vue
 
-grep -n "2\.4\.0" landing/index.html    # expect 4 hits: nav, hero, download CTA href, btn-ver
+grep -n "2\.4\.0" app/components/Products/BurnTracker.vue   # expect 2 hits: version, dmgUrl
 ```
 
-The three links are the nav bar button, the hero CTA, and the download-section CTA.
-If you get fewer than four hits, a link was missed.
+`requires` (the minimum macOS) only changes when the deployment target does.
+The version renders in the Download CTA as `v{{ version }}`; there is no separate
+badge string to keep in sync, unlike the old page.
 
 ### 4b. Feature copy — when the release adds a user-visible feature
 
@@ -141,58 +165,92 @@ This is the step that gets forgotten. The download link is mechanical; the featu
 grid is the part that actually sells the release, and it has silently fallen behind
 before (menu-bar pinning shipped in 2.3.0 and only reached the page in 2.3.1).
 
-Before writing, check what the page already claims: read the `.feature-grid`
-section and the `.strip` items, and compare against the last few releases' notes.
-Anything shipped-but-unmentioned is fair game to fold in now.
+The grid is driven by the `features` array in the same `<script setup>` — add an
+entry rather than writing markup:
 
-Add a card in the existing shape:
-
-```html
-<article class="feature-card">
-  <span class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><!-- 24x24 stroke icon --></svg></span>
-  <h3>Sentence-case title</h3>
-  <p>One or two sentences, benefit-first, matching the voice of the neighbouring cards.</p>
-</article>
+```js
+{
+  icon: resolveComponent("LucideGauge"),
+  title: "Sentence-case title",
+  body: "One or two sentences, benefit-first, matching the voice of the neighbouring entries.",
+},
 ```
 
 Constraints:
 
-- **`.feature-grid` is `repeat(3, 1fr)`** (`landing/styles.css`), collapsing to 2
-  columns under 900px and 1 under 600px. Keep the card count a multiple of three or
-  the last row is visibly ragged. If a release adds two features and that would
-  leave an orphan, combine them into one well-written card rather than shipping a
-  lopsided grid.
-- Icons are inline 24×24 stroke SVGs, `stroke-width="1.8"`, no fills. Match the set.
+- **Keep the count a multiple of three.** `.pz-grid--3` is three columns on desktop
+  (two at ≥640px, one below); there are 9 entries today. If a release adds two
+  features and that would leave an orphan, combine them into one well-written entry
+  rather than shipping a ragged last row.
+- **Icons go through `resolveComponent("LucideX")`, never a direct import.**
+  `@lucide/vue` is a transitive dependency of `nuxt-lucide-icons`, not a direct one,
+  and resolving by name is what lets the entry live in an array. Verify the glyph
+  exists before using it — v1 dropped the brand icons, so there is no
+  `LucideGithub` (the repo links use `LucideGitFork`):
+
+  ```bash
+  node -e 'const d=require("fs").readFileSync("node_modules/@lucide/vue/dist/lucide-vue.prefixed.d.ts","utf8");
+           console.log(/LucideGauge\b/.test(d) ? "ok" : "MISSING")'
+  ```
+
 - Copy is benefit-first and free of implementation detail — the release notes are
   where mechanics go, not the landing page.
-- The `.strip` band near the top holds four short trust claims. Update it only when
-  a release changes what the app fundamentally *is* (e.g. a new provider), not for
-  every feature.
+- The four-cell `highlights` band under the hero holds short trust claims. Update it
+  only when a release changes what the app fundamentally *is* (e.g. a new provider),
+  not for every feature.
 
-### 4c. Ship it
+### 4c. Screenshots — only if the UI changed
+
+`public/images/burntracker-popover.png` is the app's popover, cropped to its own
+bounds with transparent corners (no desktop wallpaper around it). If you replace it,
+**give it a new filename and update the `src`** — assets are served
+`immutable, s-maxage=86400`, so Cloudflare will keep serving the old bytes from its
+edge for a day if you overwrite in place.
+
+### 4d. Ship it
+
+The deploy is **tag-triggered, not branch-triggered** — this is the single biggest
+difference from the old workflow. Pushing to `production` deploys nothing:
 
 ```bash
-git add landing/index.html
-git commit -m "docs: Point landing page at v2.4.0 …"
-git push origin develop
+npx nuxi generate                    # must exit 0 and prerender /burn-tracker
+git add app/components/Products/BurnTracker.vue
+git commit -m "Point the burn-tracker page at v2.4.0"
+git push origin production
+
+git tag -a v2.2.17 -m "Point the burn-tracker page at v2.4.0"   # site's own series
+git push origin v2.2.17
 ```
 
-`.github/workflows/deploy-pages.yml` deploys to GitHub Pages on push to `develop`,
-but **only when the diff touches `landing/**`**. A landing change bundled into a
-commit that the workflow's path filter still matches is fine; just don't expect a
-deploy from a push that never touched `landing/`.
+`.github/workflows/deployTocPanel.yml` fires on `push: tags`, runs `npx nuxi
+generate` and FTPs `.output/public/` to cPanel.
+
+Two traps:
+
+- **The site's tags are its own series, unrelated to BurnTracker's.** The site is on
+  `v2.2.x`; the app is on `v2.x`. Check `git tag --sort=-v:refname | head -1` and
+  increment *that*. Never tag the site with the app's version.
+- **`/burn-tracker` is listed explicitly in `nitro.prerender.routes`** because
+  nothing on the site links to it, so `crawlLinks` cannot reach it. If that entry is
+  removed the page silently vanishes from the static build and 404s in production.
 
 ## 5. Verify
 
 ```bash
-gh run list --limit 1                                    # Pages deploy succeeded
 gh release view v2.4.0 --json assets --jq '.assets[].name'   # the .dmg is attached
 curl -sIL -o /dev/null -w '%{http_code}\n' \
   https://github.com/aminurislamarnob/burnTracker/releases/download/v2.4.0/BurnTracker-2.4.0.dmg
+
+# landing page — in the portfolio repo, not this one
+gh run list --repo aminurislamarnob/aminurislam.me --limit 1     # FTP deploy succeeded
+curl -s https://aminurislam.me/burn-tracker/ | grep -o 'BurnTracker-2\.4\.0\.dmg' | head -1
 ```
 
 The download should end at `200`. If it's a 404, the release exists but the asset
 upload failed — re-upload with `gh release upload v2.4.0 build/BurnTracker-2.4.0.dmg`.
+
+The live page can lag a minute or two behind the deploy, and Cloudflare caches the
+HTML briefly; re-check before assuming the tag did not take.
 
 ## Commit message conventions
 
@@ -205,6 +263,10 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 ```
 
 A pure version bump with no feature attached is `chore: Bump version to X.Y.Z`.
+
+**This applies to this repo only.** The portfolio repo does not use the `type:`
+prefix — its log is plain imperative subjects ("Rename the popover image to bust its
+CDN cache"). Match whichever repo you are committing in.
 
 ## Notes
 

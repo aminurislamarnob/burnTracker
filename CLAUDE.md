@@ -29,8 +29,7 @@ BurnTracker/
                                  CommandCodeCardView, MenuBarLabel, SettingsView, Components
   Utilities/TimeFormat.swift
   Assets.xcassets               AppIcon, MenuBarIcon (template), AppIconImage
-assets/  AppIcon.iconset/         icon sources (also used by the landing page)
-landing/                          marketing site (deployed via .github/workflows)
+assets/  AppIcon.iconset/         icon sources
 ```
 
 ## Architecture
