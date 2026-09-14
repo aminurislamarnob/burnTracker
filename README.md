@@ -2,6 +2,7 @@
 
 A beautiful, lightweight, and modern macOS menu-bar utility built natively in **Swift + SwiftUI**. It resides in your macOS menu bar, letting you monitor rolling 5-hour session limits and weekly utilization quotas across multiple Anthropic **Claude.ai** accounts simultaneously — plus your local **Antigravity / Gemini CLI** usage.
 
+[![Website](https://img.shields.io/badge/Website-aminurislam.me%2Fburn--tracker-702fff?style=flat-square&logo=safari&logoColor=white)](https://aminurislam.me/burn-tracker/)
 ![macOS Status Bar Integration](https://img.shields.io/badge/Platform-macOS%2013%2B-orange?style=flat-square&logo=apple)
 ![Swift](https://img.shields.io/badge/Swift-5-orange?style=flat-square&logo=swift)
 ![SwiftUI](https://img.shields.io/badge/UI-SwiftUI-blue?style=flat-square&logo=swift)
@@ -18,6 +19,8 @@ Grab the latest signed disk image from the [**Releases**](https://github.com/ami
 3. On first launch, right-click the app → **Open** → **Open anyway** (the app is signed to run locally, so macOS Gatekeeper shows a verification warning on a distributed build).
 
 Requires macOS 13.0 (Ventura) or newer. Prefer to build it yourself? See [Building & Running](#building--running-).
+
+There's also a landing page at **<https://aminurislam.me/burn-tracker/>** with the feature tour and a direct download.
 
 ---
 
@@ -99,7 +102,6 @@ burnTracker/
 │   ├── Utilities/                    # TimeFormat
 │   └── Assets.xcassets/              # AppIcon, template MenuBarIcon, header icon
 ├── assets/                           # Icon sources & preview image
-├── landing/                          # Marketing site (deployed via GitHub Pages)
 └── README.md
 ```
 
