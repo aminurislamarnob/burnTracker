@@ -91,7 +91,7 @@ gh release create v2.4.0 \
   --target develop \
   --title "BurnTracker 2.4.0" \
   --notes "$(cat <<'EOF'
-Native SwiftUI menu-bar app for tracking Claude.ai, Antigravity, Gemini CLI, and Command Code usage.
+Native SwiftUI menu-bar app for tracking Claude.ai, Antigravity, and Command Code usage.
 
 ## What's new in 2.4.0
 
