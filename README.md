@@ -16,7 +16,15 @@ Grab the latest signed disk image from the [**Releases**](https://github.com/ami
 
 1. Download `BurnTracker-<version>.dmg` (e.g. [`BurnTracker-2.2.0.dmg`](https://github.com/aminurislamarnob/burnTracker/releases/download/v2.2.0/BurnTracker-2.2.0.dmg)).
 2. Open the `.dmg` and drag **BurnTracker** into your **Applications** folder.
-3. On first launch, right-click the app → **Open** → **Open anyway** (the app is signed to run locally, so macOS Gatekeeper shows a verification warning on a distributed build).
+3. On first launch, macOS blocks the app — it is signed to run locally rather than notarized with a paid Apple Developer certificate, so Gatekeeper quarantines the download. Clear the flag once:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/BurnTracker.app
+   ```
+
+   Then open it normally. Prefer not to use the terminal? After the blocked launch, go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**.
+
+> **Why not right-click → Open?** That worked through macOS 14. On macOS 15 (Sequoia) and newer the warning is a *“BurnTracker” Not Opened* dialog offering only **Move to Trash** or **Done**, with no bypass — use one of the two routes above instead.
 
 Requires macOS 13.0 (Ventura) or newer. Prefer to build it yourself? See [Building & Running](#building--running-).
 
@@ -80,7 +88,7 @@ xcodebuild -project BurnTracker.xcodeproj -scheme BurnTracker -configuration Rel
 ```
 The built `BurnTracker.app` is placed in Xcode's DerivedData `Build/Products/Release/` directory.
 
-> *Note: the app is signed to run locally without a paid Apple Developer certificate, so macOS Gatekeeper may show a verification warning on a distributed build. To bypass it on first run, Right-Click the `.app` bundle, select **Open**, and click **Open anyway**.*
+> *Note: the app is ad-hoc signed to run locally, without a paid Apple Developer certificate, so a **distributed** build is quarantined by Gatekeeper. A build you compile yourself is not — the quarantine flag comes from the browser that downloaded the `.dmg`, so running straight out of DerivedData needs no extra step. To un-quarantine a downloaded copy: `xattr -dr com.apple.quarantine /Applications/BurnTracker.app`.*
 
 ---
 

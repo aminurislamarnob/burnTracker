@@ -86,7 +86,7 @@ rather than renaming the file. `build/` is gitignored; the `.dmg` is never commi
 
 ## 3. Create the GitHub release
 
-```bash
+````bash
 gh release create v2.4.0 \
   --target develop \
   --title "BurnTracker 2.4.0" \
@@ -102,20 +102,30 @@ Native SwiftUI menu-bar app for tracking Claude.ai, Antigravity, Gemini CLI, and
 
 1. Download `BurnTracker-2.4.0.dmg` below.
 2. Open it and drag **BurnTracker** to **Applications**.
-3. First launch: right-click the app → **Open** → **Open anyway** (the app is signed to run locally, so Gatekeeper shows a warning on a distributed build).
+3. First launch: macOS blocks the app — it is signed to run locally rather than notarized, so Gatekeeper quarantines the download. Clear the flag once:
+
+   ```
+   xattr -dr com.apple.quarantine /Applications/BurnTracker.app
+   ```
+
+   Then open it normally. Prefer not to use the terminal? After the blocked launch, go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**.
 
 Requires macOS 13.0 (Ventura) or newer.
 EOF
 )" \
   build/BurnTracker-2.4.0.dmg
-```
+````
 
 Conventions that every past release follows — keep them:
 
 - Tag is `vX.Y.Z`, release title is `BurnTracker X.Y.Z` (tag has the `v`, title doesn't).
 - The same one-line intro sentence opens every release.
 - The **Install** section is verbatim boilerplate apart from the filename. The
-  Gatekeeper step matters: the build is self-signed and not notarized.
+  Gatekeeper step matters: the build is self-signed and not notarized. Do **not**
+  reword it back to “right-click → Open → Open anyway” — that bypass is gone on
+  macOS 15+, where the dialog offers only *Move to Trash* / *Done*, so the
+  `xattr -dr com.apple.quarantine` line is the only advice that works on every
+  supported version. Keep it in step with the README's Download section.
 - Attach exactly one asset, the `.dmg`.
 
 Write the "What's new" bullets from the actual commits since the last tag
