@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `xcodebuild -project BurnTracker.xcodeproj -scheme BurnTracker -configuration Debug -destination 'platform=macOS' build` — build from the CLI
 - Run from Xcode (⌘R), or launch the built `BurnTracker.app` from `~/Library/Developer/Xcode/DerivedData/.../Build/Products/Debug/`
 
-Requires Xcode 16+ (the project uses a file-system-synchronized group). Deployment target is macOS 13.0; Swift language mode 5. There is no test suite or linter. The app runs as a menu-bar accessory (no Dock icon); quit it from the in-app power button (top-right) or Activity Monitor.
+Requires Xcode 16+ (the project uses a file-system-synchronized group). Deployment target is macOS 15.0; Swift language mode 5. There is no test suite or linter. The app runs as a menu-bar accessory (no Dock icon); quit it from the in-app power button (top-right) or Activity Monitor.
 
 ## Project layout
 

@@ -24,9 +24,9 @@ Grab the latest signed disk image from the [**Releases**](https://github.com/ami
 
    Then open it normally. Prefer not to use the terminal? After the blocked launch, go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**.
 
-> **Why not right-click → Open?** That worked through macOS 14. On macOS 15 (Sequoia) and newer the warning is a *“BurnTracker” Not Opened* dialog offering only **Move to Trash** or **Done**, with no bypass — use one of the two routes above instead.
+> **Why not right-click → Open?** That bypass was removed in macOS 15 (Sequoia), which is the minimum BurnTracker supports. The warning there is a *“BurnTracker” Not Opened* dialog offering only **Move to Trash** or **Done**, so use one of the two routes above instead.
 
-Requires macOS 13.0 (Ventura) or newer. Prefer to build it yourself? See [Building & Running](#building--running-).
+Requires macOS 15.0 (Sequoia) or newer. Prefer to build it yourself? See [Building & Running](#building--running-).
 
 There's also a landing page at **<https://aminurislam.me/burn-tracker/>** with the feature tour and a direct download.
 
@@ -72,7 +72,7 @@ To sync live usage metrics, you'll need the `sessionKey` cookie value for each a
 ## Building & Running 🛠️
 
 ### Prerequisites
-- macOS 13.0 (Ventura) or newer
+- macOS 15.0 (Sequoia) or newer
 - Xcode 16 or newer
 
 ### Run from Xcode

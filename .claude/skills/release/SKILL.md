@@ -110,7 +110,7 @@ Native SwiftUI menu-bar app for tracking Claude.ai, Antigravity, Gemini CLI, and
 
    Then open it normally. Prefer not to use the terminal? After the blocked launch, go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**.
 
-Requires macOS 13.0 (Ventura) or newer.
+Requires macOS 15.0 (Sequoia) or newer.
 EOF
 )" \
   build/BurnTracker-2.4.0.dmg
