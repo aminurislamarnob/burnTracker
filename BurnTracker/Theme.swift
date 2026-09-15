@@ -25,7 +25,6 @@ enum Theme {
     static let warning = Color(hex: 0xFF9F0A)      // Apple orange
 
     // CLI provider brand tints (compact quota bars).
-    static let geminiTint = Color(hex: 0xA78BFA)       // Gemini CLI — soft violet
     static let antigravityTint = Color(hex: 0x7BC67F)  // Antigravity — sage green
     static let commandCodeTint = Color(hex: 0x556AF3)  // Command Code — brand indigo
 

@@ -22,7 +22,7 @@ BurnTracker/
   Theme.swift                    color/design tokens
   Models/                        Account, QuotaData, AntigravityData, CommandCodeData,
                                  PinnedProvider, TrackerSettings
-  Services/                      ClaudeService, AntigravityService, GeminiService, CommandCodeService,
+  Services/                      ClaudeService, AntigravityService, CommandCodeService,
                                  CliQuotaSupport, Persistence, FileWatcher, NotificationManager,
                                  SessionAutomation
   Views/                         RootView, DashboardView, AccountCardView, CliQuotaCardView,
@@ -34,22 +34,22 @@ assets/  AppIcon.iconset/         icon sources
 
 ## Architecture
 
-A native SwiftUI macOS **menu-bar app** that displays Claude.ai usage quotas for multiple accounts, plus three **separate** CLI quota cards — Antigravity, Gemini CLI, and Command Code — each an independent provider with its own source, sync, and link/unlink. (Migrated from an Electron app; the JS/IPC layers no longer exist.)
+A native SwiftUI macOS **menu-bar app** that displays Claude.ai usage quotas for multiple accounts, plus two **separate** CLI quota cards — Antigravity and Command Code — each an independent provider with its own source, sync, and link/unlink. (Migrated from an Electron app; the JS/IPC layers no longer exist.)
 
 - **`BurnTrackerApp.swift`** — the `@main` scene is a single `MenuBarExtra` with `.menuBarExtraStyle(.window)` (a popover-style window). An `NSApplicationDelegateAdaptor` sets `NSApp.setActivationPolicy(.accessory)` so there is no Dock icon, and calls `AppState.shared.onLaunch()` at startup so watchers/timer run before the popover is ever opened. It holds `AppState.shared` as an `@ObservedObject` so the menu-bar label redraws when the pinned provider's usage changes.
 
 ### Menu-bar pin
 
-The user can pin **one** reading (`PinnedProvider`: a Claude account by id, one Claude account's model-scoped weekly cap, or Gemini / Antigravity / Command Code) so the menu bar shows it next to the glyph. `AppState.togglePin` sets or clears the single `pinnedProvider`, so one-at-a-time is a property of the model rather than UI bookkeeping; `pinnedSummary` resolves it to a label + percentage.
+The user can pin **one** reading (`PinnedProvider`: a Claude account by id, one Claude account's model-scoped weekly cap, or Antigravity / Command Code) so the menu bar shows it next to the glyph. `AppState.togglePin` sets or clears the single `pinnedProvider`, so one-at-a-time is a property of the model rather than UI bookkeeping; `pinnedSummary` resolves it to a label + percentage.
 
-Each provider reports "5-hour usage" differently: Claude uses `sessionUtilization`, Gemini/Antigravity reuse `fiveHourUsedPct` (100 − lowest remaining lane), and Command Code uses its 5-hour window — **falling back to `creditsUsedPct`** for plans with no request window (`limited: false`), which otherwise have no 5-hour signal at all.
+Each provider reports "5-hour usage" differently: Claude uses `sessionUtilization`, Antigravity uses `fiveHourUsedPct` (100 − lowest remaining lane), and Command Code uses its 5-hour window — **falling back to `creditsUsedPct`** for plans with no request window (`limited: false`), which otherwise have no 5-hour signal at all.
 
 `.claudeModelWeekly` is the one case that pins a **weekly** figure rather than a 5-hour one — it reads the matching `modelWeeklyLimits` entry (see below). Its pin control lives on the quota row itself (`CompactQuotaRow.onTogglePin`), not the card header, since a card can carry several scoped caps.
 
 `MenuBarLabel.image(for:)` composites the glyph and text into a **single** template `NSImage`. This is deliberate: `MenuBarExtra`'s label does not reliably lay out a multi-view hierarchy, so drawing one image keeps the result predictable while `isTemplate = true` preserves light/dark menu-bar recoloring.
 
 The pin is persisted as a flat token string (`pinnedProvider`, e.g. `"claude:acc_123"`, `"claude-model:acc_123:Fable"`) and is **self-healing**: `prunePinIfDangling()` runs on load and after every account removal/unlink, so a pin pointing at a provider that no longer exists can never leave a stale reading in the menu bar. A model pin prunes on the **account** only — `quota` is transient and nil at launch, so testing for the cap itself would drop the pin before the first fetch; a cap that genuinely vanishes instead yields no `pinnedSummary`, which already falls back to the plain glyph.
-- **`AppState`** (`@MainActor final class … ObservableObject`, singleton `AppState.shared`) — the single source of view state (`accounts`, `agAccount`, `geminiAccount`, `commandCodeAccount`, `pinnedProvider`, `activeView`, `globalStatus`, `refreshMinutes`, `alertThreshold`) and all coordination logic. Views observe it via `@EnvironmentObject`.
+- **`AppState`** (`@MainActor final class … ObservableObject`, singleton `AppState.shared`) — the single source of view state (`accounts`, `agAccount`, `commandCodeAccount`, `pinnedProvider`, `activeView`, `globalStatus`, `refreshMinutes`, `alertThreshold`) and all coordination logic. Views observe it via `@EnvironmentObject`.
 - **Services** are stateless enums/classes with `async` methods. There is no IPC boundary — networking, filesystem, and process calls run directly (no CORS/cookie restrictions to work around).
 
 ### Data flow & live quota fetching
@@ -70,15 +70,33 @@ Each cap is independently **pinnable** (`PinnedProvider.claudeModelWeekly`) and 
 
 Services return `Result`/optionals rather than throwing across a boundary; `AppState` branches on success and updates the matching account by `id`.
 
-### Antigravity & Gemini CLI quota (two separate providers)
+### Antigravity quota
 
-Antigravity (the IDE) and the Gemini CLI are tracked **independently** — each has its own linked account (`agAccount` / `geminiAccount`), its own card, and its own refresh. The two originally-combined fetch strategies are now split one-per-provider:
-1. **`AntigravityService.fetchQuota()`** — runs `lsof` to find the Antigravity language-server port, then POSTs to `https://127.0.0.1:{port}/…/RetrieveUserQuotaSummary`. A scoped `URLSessionDelegate` (in `CliQuotaSupport`) trusts the self-signed cert **for 127.0.0.1 only**.
-2. **`GeminiService.fetchQuota()`** — reads `~/.gemini/oauth_creds.json`, decodes the `id_token` JWT for the client id, refreshes the token against the embedded (base64-obfuscated) Google OAuth client secrets, and POSTs to the Cloud Code `retrieveUserQuota` API.
+**`AntigravityService.fetchQuota()`** POSTs to `…/RetrieveUserQuotaSummary` on the local Antigravity server. A scoped `URLSessionDelegate` (in `CliQuotaSupport`) trusts the self-signed cert **for 127.0.0.1 only**.
 
-`CliQuotaSupport` holds everything both providers share: paths, email resolution, JWT/OAuth handling, the localhost-trust delegate, and the bucket parsers. Each provider still surfaces the same two model-family groups internally (**Gemini** and **Claude & GPT**), rendered by the shared `CliQuotaCardView`. The bucket-selection heuristics (weekly vs 5-hour, gemini vs claude/gpt) are load-bearing and undocumented — port them verbatim if refactoring.
+The server requires a **CSRF token**, and both reference implementations (`reference/CodexBar-main`, `reference/openusage-main`) are stale here: each assumes the CLI's server needs none. Current builds reject a missing *and* an empty token identically (`401 {"code":"unauthenticated","message":"missing CSRF token"}`).
 
-### Command Code quota (a third, differently-shaped provider)
+`LanguageServerDiscovery` finds the token. The IDE spawns `language_server` with the values in its **argv** — `--csrf_token`, and on non-`--standalone` builds `--extension_server_port` / `--extension_server_csrf_token` — so `ps -ax -ww -o pid=,command=` is where they are read. Listening ports are *not* in argv and come from `lsof -a -p <pid>`, **scoped to that pid** rather than scanning every socket on the machine. Process kind is matched on the executable's basename so a stray path argument containing `agy` cannot promote an unrelated process into a quota source.
+
+Endpoints are tried richest-first: language-server ports (HTTPS, with token) → extension server (HTTP, its own token) → a **token-less probe of the `agy` CLI**. That last leg is a compatibility requirement, not a fallback of convenience: before CSRF support existed this app sent no token at all, so a token-less server is the only thing it could ever talk to — dropping it would silently break anyone it still serves. Ordering it last means it never wins over a working token-bearing server. HTTPS-only for the language server: CodexBar's `http` leg is `#if os(Linux)` (FoundationNetworking cannot trust the self-signed cert there), so on macOS it would only send the token in cleartext.
+
+The request shape is ported verbatim from openusage — `x-codeium-csrf-token`, `Connect-Protocol-Version: 1`, and a `{"metadata": {ideName, extensionName, ideVersion, locale}}` body. Do not trim it to what currently seems necessary; the server is free to validate any of it.
+
+`fetchQuota` returns `AntigravityFetchOutcome` rather than an optional, and `AppState` maps `.notRunning` / `.unauthorized` to distinct `CliAccount.statusMessage` values that `CliQuotaCardView` shows in place of its generic text. The distinction is load-bearing: "open the app" and "the app is open but refused us" need different actions, and **`agy` running without the IDE reports `.unauthorized`** — the common case — so that wording must fit both it and a CSRF scheme change.
+
+**The remote Cloud Code fallback is deliberately not implemented.** openusage falls back to `cloudcode-pa.googleapis.com` with Antigravity's own OAuth credential (`~/.gemini/antigravity-cli/antigravity-oauth-token`). That credential refreshes fine, but the quota endpoints return the same `403 PERMISSION_DENIED` / `SUBSCRIPTION_REQUIRED` that retired the Gemini provider.
+
+Antigravity signs in through the Gemini CLI, so its **account identity still comes from `~/.gemini`** — `CliQuotaSupport.hasCredentials` / `resolveEmail()` read `oauth_creds.json` and `google_accounts.json` for the linked email. Nothing here speaks OAuth to Google; the quota itself comes from the local language server. Do not mistake this directory dependency for a Gemini provider.
+
+`CliQuotaSupport` holds what Antigravity needs: paths, email resolution, JWT decoding, the localhost-trust delegate, and `parseBucketGroup`. Antigravity surfaces two model-family groups internally (**Gemini** and **Claude & GPT** — `AGGroup`, hence the `gemini` field name), rendered by `CliQuotaCardView`. The bucket-selection heuristics (weekly vs 5-hour, gemini vs claude/gpt) are load-bearing and undocumented — port them verbatim if refactoring.
+
+#### Removed: the Gemini CLI provider
+
+A third provider tracked the Gemini CLI's own quota via the Cloud Code API (`cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`). It was removed after Google stopped licensing Gemini Code Assist for the account tiers it served — the endpoint returns `403 PERMISSION_DENIED` / `SUBSCRIPTION_REQUIRED` from `cloudaicompanion.googleapis.com` regardless of the request body, so the card could only ever show an error. Its OAuth machinery (token refresh, the embedded client-secret table, the `oauth2.js` fallback, and the Terminal-based login runner) went with it; `git log` has the full implementation if the entitlement ever returns.
+
+The `geminiAccount` key in `tracker-settings.json` is **still read and written back verbatim** (`AppState.retiredGeminiAccount`) rather than dropped, so a settings file written here still loads in the original Electron build. A stale `"gemini"` pin token now decodes to nil, which already falls the menu bar back to the plain glyph, and a stale `"gemini"` entry in `cardOrder` is filtered out by `visibleCardIDs` — neither needs a migration step.
+
+### Command Code quota (a differently-shaped provider)
 
 Command Code (the `cmd` CLI) is tracked independently via `commandCodeAccount`. It does **not** reuse `AGGroup`/`CliQuotaCardView`, because its quota model is different: it bills in **credits** (dollars against a monthly plan allowance), with optional 5-hour/weekly *request* windows on top. Hence its own `CommandCodeData` model and `CommandCodeCardView`.
 
@@ -90,13 +108,13 @@ Two things are **ports of the CLI's internals and must be kept in step** with it
 
 `windowLimits` reports `used`/`cap` (absolute *usage*, unlike the other CLI providers' remaining fractions) and `resetAt` as **epoch milliseconds**, where `0` means the window has not started. `limited: false` means the plan enforces no request windows at all, and both lanes are dropped.
 
-The API key is **read fresh from `~/.commandcode/auth.json` on every fetch** and never copied into `tracker-settings.json` (which stores only the `"local-creds"` placeholder, as Antigravity/Gemini do) — so re-running `cmd login` is picked up automatically and the secret lives in exactly one place.
+The API key is **read fresh from `~/.commandcode/auth.json` on every fetch** and never copied into `tracker-settings.json` (which stores only the `"local-creds"` placeholder, as Antigravity does) — so re-running `cmd login` is picked up automatically and the secret lives in exactly one place.
 
 ### Persistence
 
 State is stored as JSON in `~/.claude/tracker-settings.json` (`Persistence.swift`), the **same file and shape** as the original Electron build (drop-in compatible):
 - `accounts` — `{ id, label, sessionKey }`. Transient runtime fields (`status`, `quota`, `lastFetchTime`, `alertedHighUsage`) are stripped before writing in `AppState.saveToDisk()`.
-- `agAccount` (Antigravity), `geminiAccount` (Gemini CLI), and `commandCodeAccount` (Command Code) — each `{ token, email }`; plus `refreshMinutes` and `alertThreshold`. Every provider key is decoded optionally, so legacy files (e.g. with only `agAccount`) still load and the missing providers simply start unlinked. `pinnedProvider` (the menu-bar pin token) is likewise optional.
+- `agAccount` (Antigravity) and `commandCodeAccount` (Command Code) — each `{ token, email }`; plus `geminiAccount`, retired but round-tripped verbatim (see above); plus `refreshMinutes` and `alertThreshold`. Every provider key is decoded optionally, so legacy files (e.g. with only `agAccount`) still load and the missing providers simply start unlinked. `pinnedProvider` (the menu-bar pin token) is likewise optional.
 
 **Session keys are stored in plaintext** on disk — keep them local, never log them, and never transmit them anywhere except Claude.ai.
 
@@ -109,5 +127,5 @@ State is stored as JSON in `~/.claude/tracker-settings.json` (`Persistence.swift
 
 ### Notifications & session automation
 
-- `NotificationManager` (`UNUserNotificationCenter`) fires an **edge-triggered** alert once when a provider's 5-hour usage first crosses `alertThreshold`, re-arming only after it drops back below. This covers **all providers**: Claude accounts (`checkSessionUsageAlert`, using session utilization), Antigravity/Gemini (`checkCliUsageAlert`, which converts each provider's *remaining* 5-hour fraction into usage = 100 − lowest-remaining lane), and Command Code (`checkCommandCodeUsageAlert`, whose 5-hour window is already expressed as usage; plans with no window are skipped). `alertThreshold` and `refreshMinutes` are **app-wide** settings (the "General" card in Settings), not Claude-scoped — the background timer's `refreshAll()` likewise re-syncs every provider.
+- `NotificationManager` (`UNUserNotificationCenter`) fires an **edge-triggered** alert once when a provider's 5-hour usage first crosses `alertThreshold`, re-arming only after it drops back below. This covers **all providers**: Claude accounts (`checkSessionUsageAlert`, using session utilization), Antigravity (`checkCliUsageAlert`, which converts its *remaining* 5-hour fraction into usage = 100 − lowest-remaining lane), and Command Code (`checkCommandCodeUsageAlert`, whose 5-hour window is already expressed as usage; plans with no window are skipped). `alertThreshold` and `refreshMinutes` are **app-wide** settings (the "General" card in Settings), not Claude-scoped — the background timer's `refreshAll()` likewise re-syncs every provider.
 - `SessionWindowController` (`SessionAutomation.swift`) opens `claude.ai/new` in a `WKWebView` with the account's `sessionKey` cookie injected into an isolated (non-persistent) data store. It only opens the chat, ready for input — the user types and sends their own message (no prompt automation). The earlier synthetic-input path (ProseMirror `execCommand`/input events to auto-send a prompt) was removed as unreliable.

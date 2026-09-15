@@ -16,7 +16,6 @@ final class AppState: ObservableObject {
     @Published var activeView: ActiveView = .dashboard
     @Published var accounts: [Account] = []
     @Published var agAccount: CliAccount?
-    @Published var geminiAccount: CliAccount?
     @Published var commandCodeAccount: CommandCodeAccount?
     @Published var globalStatus: GlobalStatus = .offline
     /// CLI-wide Claude Code usage trend (local logs), shared across Claude cards.
@@ -27,6 +26,11 @@ final class AppState: ObservableObject {
     @Published var alertThreshold: Int = 80
     @Published var cardOrder: [String] = []
     @Published var lastSyncTime: Date?
+
+    /// Persisted verbatim from `tracker-settings.json`. The Gemini CLI provider
+    /// was removed, but the key is round-tripped rather than dropped so a file
+    /// written here still loads in the Electron build.
+    private var retiredGeminiAccount: TrackerSettings.PersistedAg?
 
     private var refreshTimer: Timer?
     private var fileWatchers: [FileWatcher] = []
@@ -51,10 +55,10 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// True when at least one provider (Claude, Antigravity, Gemini CLI, or
+    /// True when at least one provider (Claude, Antigravity, or
     /// Command Code) is linked.
     var hasAnyAccount: Bool {
-        !accounts.isEmpty || agAccount != nil || geminiAccount != nil || commandCodeAccount != nil
+        !accounts.isEmpty || agAccount != nil || commandCodeAccount != nil
     }
 
     /// Called each time the menu-bar popover appears (the `window-shown`
@@ -72,9 +76,9 @@ final class AppState: ObservableObject {
         if let ag = settings.agAccount {
             agAccount = CliAccount(token: ag.token, email: ag.email, status: .offline)
         }
-        if let gem = settings.geminiAccount {
-            geminiAccount = CliAccount(token: gem.token, email: gem.email, status: .offline)
-        }
+        // The Gemini CLI provider was removed, but its key is carried through
+        // untouched so a file written here still loads in the Electron build.
+        retiredGeminiAccount = settings.geminiAccount
         if let cmd = settings.commandCodeAccount {
             commandCodeAccount = CommandCodeAccount(token: cmd.token, email: cmd.email, status: .offline)
         }
@@ -94,11 +98,10 @@ final class AppState: ObservableObject {
             TrackerSettings.PersistedAccount(id: $0.id, label: $0.label, sessionKey: $0.sessionKey, email: $0.email)
         }
         let ag = agAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
-        let gem = geminiAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
         let cmd = commandCodeAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
         let settings = TrackerSettings(accounts: persisted,
                                        agAccount: ag,
-                                       geminiAccount: gem,
+                                       geminiAccount: retiredGeminiAccount,
                                        commandCodeAccount: cmd,
                                        pinnedProvider: pinnedProvider?.token,
                                        refreshMinutes: refreshMinutes,
@@ -119,7 +122,6 @@ final class AppState: ObservableObject {
         if !accounts.isEmpty, let trend = claudeUsageTrend, !trend.days.isEmpty {
             active.append("claudeTrend")
         }
-        if geminiAccount != nil { active.append("gemini") }
         if commandCodeAccount != nil { active.append("commandCode") }
         if agAccount != nil { active.append("antigravity") }
 
@@ -163,7 +165,6 @@ final class AppState: ObservableObject {
         globalStatus = .syncing
         for i in accounts.indices { accounts[i].status = .syncing }
         if agAccount != nil { agAccount?.status = .syncing }
-        if geminiAccount != nil { geminiAccount?.status = .syncing }
         if commandCodeAccount != nil { commandCodeAccount?.status = .syncing }
         updateGlobalStatus()
 
@@ -180,11 +181,6 @@ final class AppState: ObservableObject {
             if agAccount != nil {
                 group.addTask { [weak self] in
                     await self?.refreshAntigravity()
-                }
-            }
-            if geminiAccount != nil {
-                group.addTask { [weak self] in
-                    await self?.refreshGemini()
                 }
             }
             if commandCodeAccount != nil {
@@ -248,31 +244,31 @@ final class AppState: ObservableObject {
 
     func refreshAntigravity() async {
         guard let token = agAccount?.token, !token.isEmpty else { return }
-        if let result = await AntigravityService.fetchQuota() {
+        switch await AntigravityService.fetchQuota() {
+        case let .success(result):
             agAccount?.gemini = result.gemini
             agAccount?.claudeGpt = result.claudeGpt
             if let email = result.email { agAccount?.email = email }
             agAccount?.lastFetch = Date()
+            agAccount?.statusMessage = nil
             agAccount?.status = .online
             checkCliUsageAlert(\.agAccount, providerName: "Antigravity")
-        } else {
+        case .notRunning:
+            agAccount?.statusMessage = "Antigravity isn't running. Open the app, then refresh."
+            agAccount?.status = .error
+        case .unauthorized:
+            // A server answered but rejected us. Two distinct causes share this
+            // state: the IDE is open and its CSRF scheme changed, or only the
+            // `agy` CLI is running and refuses token-less calls. The wording has
+            // to fit both, since the CLI-only case is the common one.
+            agAccount?.statusMessage = "Antigravity refused the request. Open or restart the app, then refresh."
+            agAccount?.status = .error
+        case .failed:
+            agAccount?.statusMessage = nil
             agAccount?.status = .error
         }
     }
 
-    func refreshGemini() async {
-        guard let token = geminiAccount?.token, !token.isEmpty else { return }
-        if let result = await GeminiService.fetchQuota() {
-            geminiAccount?.gemini = result.gemini
-            geminiAccount?.claudeGpt = result.claudeGpt
-            if let email = result.email { geminiAccount?.email = email }
-            geminiAccount?.lastFetch = Date()
-            geminiAccount?.status = .online
-            checkCliUsageAlert(\.geminiAccount, providerName: "Gemini CLI")
-        } else {
-            geminiAccount?.status = .error
-        }
-    }
 
     func refreshCommandCode() async {
         guard let token = commandCodeAccount?.token, !token.isEmpty else { return }
@@ -418,7 +414,6 @@ final class AppState: ObservableObject {
         // which already falls the menu bar back to the plain glyph.
         case .claudeModelWeekly(let id, _):
             stillExists = accounts.contains { $0.id == id }
-        case .gemini:         stillExists = geminiAccount != nil
         case .antigravity:    stillExists = agAccount != nil
         case .commandCode:    stillExists = commandCodeAccount != nil
         }
@@ -442,9 +437,6 @@ final class AppState: ObservableObject {
                   let limit = acc.quota?.modelWeeklyLimits.first(where: { $0.modelName == model })
             else { return nil }
             return PinnedSummary(label: model, percent: limit.percentInt)
-        case .gemini:
-            guard let acc = geminiAccount, let pct = fiveHourUsedPct(acc) else { return nil }
-            return PinnedSummary(label: "Gemini", percent: pct)
         case .antigravity:
             guard let acc = agAccount, let pct = fiveHourUsedPct(acc) else { return nil }
             return PinnedSummary(label: "Antigravity", percent: pct)
@@ -467,9 +459,6 @@ final class AppState: ObservableObject {
         }
         if let ag = agAccount {
             if ag.status == .online { anySuccess = true } else { allSuccess = false }
-        }
-        if let gem = geminiAccount {
-            if gem.status == .online { anySuccess = true } else { allSuccess = false }
         }
         if let cmd = commandCodeAccount {
             if cmd.status == .online { anySuccess = true } else { allSuccess = false }
@@ -539,25 +528,6 @@ final class AppState: ObservableObject {
         aggregateGlobalStatus()
     }
 
-    // MARK: - Gemini CLI linking
-
-    func linkGemini() async -> String? {
-        guard let creds = GeminiService.login() else {
-            return "Could not find ~/.gemini/oauth_creds.json"
-        }
-        geminiAccount = CliAccount(token: creds.token, email: creds.email, status: .syncing)
-        saveToDisk()
-        await refreshGemini()
-        aggregateGlobalStatus()
-        return nil
-    }
-
-    func unlinkGemini() {
-        geminiAccount = nil
-        prunePinIfDangling()
-        saveToDisk()
-        aggregateGlobalStatus()
-    }
 
     // MARK: - Command Code linking
 
@@ -596,7 +566,6 @@ final class AppState: ObservableObject {
             accounts[i].alertedModelWeekly.removeAll()
         }
         agAccount?.alertedHighUsage = false
-        geminiAccount?.alertedHighUsage = false
         commandCodeAccount?.alertedHighUsage = false
         saveToDisk()
         for i in accounts.indices where accounts[i].status == .online {
@@ -604,7 +573,6 @@ final class AppState: ObservableObject {
             checkModelWeeklyAlerts(index: i)
         }
         checkCliUsageAlert(\.agAccount, providerName: "Antigravity")
-        checkCliUsageAlert(\.geminiAccount, providerName: "Gemini CLI")
         checkCommandCodeUsageAlert()
     }
 

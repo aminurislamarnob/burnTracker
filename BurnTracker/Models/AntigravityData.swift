@@ -1,7 +1,7 @@
 import Foundation
 
 /// A parsed CLI quota group (a model family: gemini or claude/gpt). Produced by
-/// `AntigravityService` / `GeminiService`, mirroring the shape built in `main.js`.
+/// `AntigravityService`, mirroring the shape built in `main.js`.
 struct AGGroup {
     var name: String
     var description: String?

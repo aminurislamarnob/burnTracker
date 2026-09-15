@@ -70,6 +70,9 @@ struct CliAccount {
     var gemini: AGGroup?
     var claudeGpt: AGGroup?
     var lastFetch: Date?
+    /// Why the last fetch failed, when the provider can say something more
+    /// useful than the card's generic message. Cleared on success.
+    var statusMessage: String?
     /// Edge-trigger latch for the 5-hour usage alert (mirrors `Account`).
     var alertedHighUsage: Bool = false
 }

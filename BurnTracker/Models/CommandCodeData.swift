@@ -24,8 +24,8 @@ struct CommandCodeWindow {
 /// Command Code bills in **credits** (dollars) against a monthly plan
 /// allowance, and optionally enforces 5-hour / weekly request windows on top.
 /// That is a different shape from the remaining-fraction model families used by
-/// `AntigravityService` / `GeminiService`, which is why this provider has its
-/// own model and card rather than reusing `AGGroup` / `CliQuotaResult`.
+/// `AntigravityService`, which is why this provider has its own model and card
+/// rather than reusing `AGGroup` / `CliQuotaResult`.
 ///
 /// The credit projection (`totalPool`, `creditsUsedPct`) is a port of the CLI's
 /// own `projectUsageView` — see `CommandCodeService` for the derivation.

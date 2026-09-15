@@ -4,10 +4,10 @@ import Foundation
 /// **commandcode.ai API**, authenticating with the API key the CLI stores in
 /// `~/.commandcode/auth.json`.
 ///
-/// This is a third, independent CLI provider alongside `AntigravityService` and
-/// `GeminiService`. Its quota model is credit-based (dollars against a monthly
-/// plan allowance) with optional 5-hour / weekly request windows, so it has its
-/// own model (`CommandCodeQuota`) and card rather than reusing `AGGroup`.
+/// This is an independent CLI provider alongside `AntigravityService`. Its quota
+/// model is credit-based (dollars against a monthly plan allowance) with optional
+/// 5-hour / weekly request windows, so it has its own model (`CommandCodeQuota`)
+/// and card rather than reusing `AGGroup`.
 ///
 /// The request sequence and the credit projection below are ports of the CLI's
 /// own `fetchUsageData` / `projectUsageView` — **keep them in step**, since the

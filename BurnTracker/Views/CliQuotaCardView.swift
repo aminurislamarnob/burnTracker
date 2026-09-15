@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A compact quota card for a linked CLI provider (Antigravity or Gemini CLI),
+/// A compact quota card for a linked CLI provider (Antigravity),
 /// styled after the CodexBar menu: a flat header (name + email, then an
 /// "Updated …" line) followed by thin brand-tinted bars showing *remaining*
 /// quota with "% left" and a reset countdown.
@@ -11,7 +11,8 @@ struct CliQuotaCardView: View {
     /// Provider glyph asset name shown as a tinted badge in the header.
     let iconName: String
     let account: CliAccount
-    /// Message shown when the fetch fails (source-specific).
+    /// Fallback message shown when the fetch fails and the provider gave no
+    /// more specific reason.
     let errorMessage: String
     var isPinned: Bool = false
     var onTogglePin: (() -> Void)? = nil
@@ -51,7 +52,7 @@ struct CliQuotaCardView: View {
     @ViewBuilder
     private var content: some View {
         if account.status == .error {
-            stateText(errorMessage, color: Theme.error)
+            stateText(account.statusMessage ?? errorMessage, color: Theme.error)
         } else if account.status == .syncing && rows.isEmpty {
             stateText("Syncing \(title) quotas…", color: Theme.textDimmed)
         } else if rows.isEmpty {

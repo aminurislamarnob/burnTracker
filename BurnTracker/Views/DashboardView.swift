@@ -188,17 +188,6 @@ struct DashboardView: View {
                     tint: Theme.accent,
                     title: "Claude Usage Trend")
             }
-        } else if cardId == "gemini", let gemini = app.geminiAccount {
-            CliQuotaCardView(
-                title: "Gemini CLI",
-                subtitle: "Gemini Code Assist",
-                tint: Theme.geminiTint,
-                iconName: "ProviderIcon-gemini",
-                account: gemini,
-                errorMessage: "Could not fetch Gemini CLI quota",
-                isPinned: app.isPinned(.gemini),
-                onTogglePin: { app.togglePin(.gemini) },
-                onRefresh: { Task { await app.refreshGemini() } })
         } else if cardId == "commandCode", let cmd = app.commandCodeAccount {
             CommandCodeCardView(
                 account: cmd,

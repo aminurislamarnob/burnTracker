@@ -6,7 +6,6 @@ struct SettingsView: View {
     var body: some View {
         VStack(spacing: 15) {
             claudeCard
-            geminiCard
             commandCodeCard
             antigravityCard
             generalCard
@@ -19,7 +18,7 @@ struct SettingsView: View {
         Card {
             SettingsSectionTitle("Auto-Refresh")
             LabeledField("Background sync interval",
-                         help: "Applies to all providers — Claude, Gemini CLI, Command Code, and Antigravity. Quotas also refresh instantly whenever you open the widget.") {
+                         help: "Applies to all providers — Claude, Command Code, and Antigravity. Quotas also refresh instantly whenever you open the widget.") {
                 Picker("", selection: Binding(
                     get: { app.refreshMinutes },
                     set: { app.setRefreshMinutes($0) })) {
@@ -36,7 +35,7 @@ struct SettingsView: View {
 
             SettingsSectionTitle("Notifications")
             LabeledField("Alert when 5-hour usage reaches",
-                         help: "Sends a macOS notification the first time any provider's 5-hour quota crosses this usage level. For Gemini CLI and Antigravity, usage is measured against their remaining quota; Command Code plans without a 5-hour window are not alerted.") {
+                         help: "Sends a macOS notification the first time any provider's 5-hour quota crosses this usage level. For Antigravity, usage is measured against its remaining quota; Command Code plans without a 5-hour window are not alerted.") {
                 Picker("", selection: Binding(
                     get: { app.alertThreshold },
                     set: { app.setAlertThreshold($0) })) {
@@ -101,29 +100,6 @@ struct SettingsView: View {
         HStack(alignment: .top, spacing: 6) {
             Text("\(n).").font(.system(size: 11, weight: .semibold)).foregroundColor(Theme.accentHover)
             Text(text).font(.system(size: 11)).foregroundColor(Theme.textMuted)
-        }
-    }
-
-    // MARK: - Gemini CLI card
-
-    private var geminiCard: some View {
-        Card {
-            SettingsSectionTitle("Gemini CLI Account")
-            Text("Link your local Gemini CLI to track real usage quotas via the Cloud Code API.")
-                .font(.system(size: 12))
-                .foregroundColor(Theme.textMuted)
-                .padding(.bottom, 12)
-
-            Text(app.geminiAccount != nil ? "Linked (\(app.geminiAccount?.email ?? ""))" : "Not linked.")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(Theme.textMain)
-                .padding(.bottom, 12)
-
-            CliLinkControls(
-                isLinked: app.geminiAccount != nil,
-                linkTitle: "Sync with Gemini CLI",
-                link: { await app.linkGemini() },
-                unlink: { app.unlinkGemini() })
         }
     }
 
@@ -279,7 +255,7 @@ private struct AccountSettingsRow: View {
     }
 }
 
-// MARK: - CLI link controls (shared by Gemini CLI + Antigravity)
+// MARK: - CLI link controls
 
 private struct CliLinkControls: View {
     let isLinked: Bool

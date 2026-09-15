@@ -1,12 +1,12 @@
 import Foundation
 
-/// Shared helpers used by both `AntigravityService` (local language-server
-/// probe) and `GeminiService` (Cloud Code API). Both read Google OAuth
-/// credentials from `~/.gemini` and parse the same quota-bucket shapes, so the
-/// common logic lives here.
+/// Credential and quota-bucket helpers for `AntigravityService`.
 ///
-/// The embedded Google OAuth client secrets are copied verbatim (kept
-/// base64-obfuscated, never plaintext), matching the original Electron build.
+/// Antigravity signs in through the Gemini CLI, so its account identity still
+/// comes from `~/.gemini` — these helpers read that directory but never speak
+/// OAuth to Google. (A separate Gemini CLI provider used to share this file;
+/// it was removed once Google stopped licensing Code Assist for the account
+/// tiers it served.)
 enum CliQuotaSupport {
 
     // MARK: - Paths
@@ -16,7 +16,6 @@ enum CliQuotaSupport {
     }
     static var credsURL: URL { geminiDir.appendingPathComponent("oauth_creds.json") }
     static var googleAccountsURL: URL { geminiDir.appendingPathComponent("google_accounts.json") }
-    static var projectsURL: URL { geminiDir.appendingPathComponent("projects.json") }
 
     static var hasCredentials: Bool {
         FileManager.default.fileExists(atPath: credsURL.path)
@@ -60,77 +59,6 @@ enum CliQuotaSupport {
             fiveHourPct: pct(fiveHour["remainingFraction"]),
             fiveHourRawPct: rawPct(fiveHour["remainingFraction"]),
             fiveHourResetsIn: fiveHour["resetTime"] as? String)
-    }
-
-    // MARK: - Bucket parsing (Cloud Code response)
-
-    /// Parses a group from the retrieveUserQuota response.
-    /// NOTE: weekly values are derived from the "flash/5-hour" bucket and
-    /// fiveHour values from the "pro/weekly" bucket — faithful to `main.js`.
-    static func parseCloudGroup(name: String, buckets: [[String: Any]]) -> AGGroup? {
-        guard !buckets.isEmpty else { return nil }
-
-        func modelId(_ b: [String: Any]) -> String { (b["modelId"] as? String) ?? "" }
-        func rf(_ b: [String: Any]) -> Double { asDouble(b["remainingFraction"]) ?? 0 }
-
-        let proOrWeekly = buckets.filter { modelId($0).contains("pro") || modelId($0).contains("weekly") }
-        let flashOrFiveHour = buckets.filter {
-            let m = modelId($0)
-            return m.contains("flash") || m.contains("lite") || m.contains("5hour") || m.contains("five_hour")
-        }
-
-        let lowestPro = proOrWeekly.min { rf($0) < rf($1) } ?? buckets.first!
-        let lowestFlash = flashOrFiveHour.min { rf($0) < rf($1) } ?? buckets.last!
-
-        return AGGroup(
-            name: name,
-            description: nil,
-            weeklyPct: pct(lowestFlash["remainingFraction"]),
-            weeklyRawPct: rawPct(lowestFlash["remainingFraction"]),
-            weeklyResetsIn: lowestFlash["resetTime"] as? String,
-            fiveHourPct: pct(lowestPro["remainingFraction"]),
-            fiveHourRawPct: rawPct(lowestPro["remainingFraction"]),
-            fiveHourResetsIn: lowestPro["resetTime"] as? String)
-    }
-
-    // MARK: - OAuth token refresh
-
-    static func refreshGeminiToken(refreshToken: String, clientId: String, clientSecret: String) async throws -> String {
-        var req = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
-        req.httpMethod = "POST"
-        req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        var comps = URLComponents()
-        comps.queryItems = [
-            URLQueryItem(name: "client_id", value: clientId),
-            URLQueryItem(name: "client_secret", value: clientSecret),
-            URLQueryItem(name: "refresh_token", value: refreshToken),
-            URLQueryItem(name: "grant_type", value: "refresh_token")
-        ]
-        req.httpBody = comps.percentEncodedQuery?.data(using: .utf8)
-
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        guard (resp as? HTTPURLResponse)?.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let token = json["access_token"] as? String else {
-            throw NSError(domain: "BurnTracker", code: 1, userInfo: [NSLocalizedDescriptionKey: "Token refresh failed"])
-        }
-        return token
-    }
-
-    // Embedded OAuth clients (base64-obfuscated, matching main.js).
-    private static let oauthClients: [String: [String]] = [
-        "681255809395" + "-oo8ft2oprdrnp9e3aqf6av3hmdib135j." + "apps.googleusercontent.com":
-            ["R09DU1BY", "LTR1SGdNUG0tMW83U2stZ2VWNkN1NWNsWEZzeGw="],
-        "884354919052" + "-36trc1jjb3tguiac32ov6cod268c5blh." + "apps.googleusercontent.com":
-            ["R09DU1BY", "LUs1OEZXUjQ4NkxkTEoxbUxCOHNYQzR6NnFEQWY="],
-        "1071006060591" + "-tmhssin2h21lcre235vtolojh4g403ep." + "apps.googleusercontent.com":
-            ["R09DU1BY", "LTlZUVdwRjdSV0RDMFFUZGotWXhLTXdSMFp0c1g="]
-    ]
-
-    static func clientSecret(for clientId: String) -> String? {
-        guard let parts = oauthClients[clientId],
-              let data = Data(base64Encoded: parts.joined()) else { return nil }
-        return String(data: data, encoding: .utf8)
     }
 
     // MARK: - JSON / JWT helpers
