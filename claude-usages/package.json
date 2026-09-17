@@ -1,0 +1,13 @@
+{
+  "name": "claude-usages",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web dashboard for Claude.ai and Command Code usage quotas — a hostable companion to the BurnTracker menu-bar app.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "node dev-server.mjs",
+    "deploy": "vercel deploy --prod",
+    "dev:vercel": "vercel dev"
+  }
+}
