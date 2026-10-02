@@ -73,6 +73,9 @@ final class AppState: ObservableObject {
         accounts = settings.accounts.map {
             Account(id: $0.id, label: $0.label, sessionKey: $0.sessionKey, email: $0.email, status: .offline)
         }
+        if let cc = settings.claudeCodeAccount {
+            accounts.insert(Self.makeClaudeCodeAccount(label: cc.label, email: cc.email), at: 0)
+        }
         if let ag = settings.agAccount {
             agAccount = CliAccount(token: ag.token, email: ag.email, status: .offline)
         }
@@ -94,15 +97,21 @@ final class AppState: ObservableObject {
     @discardableResult
     func saveToDisk() -> Bool {
         // Strip transient fields, matching `saveAccountsToDisk` in renderer.js.
-        let persisted = accounts.map {
+        // The Claude Code account is kept out of `accounts` on disk: the
+        // Electron build would read a keyless entry as a broken account.
+        let persisted = accounts.filter { !$0.isClaudeCode }.map {
             TrackerSettings.PersistedAccount(id: $0.id, label: $0.label, sessionKey: $0.sessionKey, email: $0.email)
         }
         let ag = agAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
         let cmd = commandCodeAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
+        let cc = claudeCodeAccount.map {
+            TrackerSettings.PersistedClaudeCode(token: "local-creds", email: $0.email, label: $0.label)
+        }
         let settings = TrackerSettings(accounts: persisted,
                                        agAccount: ag,
                                        geminiAccount: retiredGeminiAccount,
                                        commandCodeAccount: cmd,
+                                       claudeCodeAccount: cc,
                                        pinnedProvider: pinnedProvider?.token,
                                        refreshMinutes: refreshMinutes,
                                        alertThreshold: alertThreshold,
@@ -170,6 +179,12 @@ final class AppState: ObservableObject {
 
         await withTaskGroup(of: Void.self) { group in
             for account in accounts {
+                if account.isClaudeCode {
+                    group.addTask { [weak self] in
+                        await self?.refreshClaudeCode()
+                    }
+                    continue
+                }
                 let id = account.id
                 let key = account.sessionKey
                 group.addTask { [weak self] in
@@ -226,6 +241,11 @@ final class AppState: ObservableObject {
     func refreshAccount(id: String) async {
         guard let idx = accounts.firstIndex(where: { $0.id == id }) else { return }
         accounts[idx].status = .syncing
+        if accounts[idx].isClaudeCode {
+            await refreshClaudeCode()
+            aggregateGlobalStatus()
+            return
+        }
         let key = accounts[idx].sessionKey
         let result = await ClaudeService.fetchLiveLimits(sessionKey: key)
         applyAccountResult(id: id, result: result)
@@ -235,10 +255,120 @@ final class AppState: ObservableObject {
 
     /// Fetches and caches the account email once (when not already known).
     private func fetchAccountEmailIfNeeded(id: String, sessionKey: String) async {
-        guard let idx = accounts.firstIndex(where: { $0.id == id }), accounts[idx].email == nil else { return }
+        guard let idx = accounts.firstIndex(where: { $0.id == id }), accounts[idx].email == nil,
+              !accounts[idx].isClaudeCode else { return }
         guard let email = await ClaudeService.fetchAccountEmail(sessionKey: sessionKey) else { return }
         guard let i = accounts.firstIndex(where: { $0.id == id }) else { return }
         accounts[i].email = email
+        saveToDisk()
+    }
+
+    // MARK: - Claude Code (direct) account
+
+    /// The Claude Code account, if linked. It lives in `accounts` (see `Account`).
+    var claudeCodeAccount: Account? {
+        accounts.first { $0.isClaudeCode }
+    }
+
+    /// A session-key account that is the same Claude account as the Claude
+    /// Code login, matched on email. Only surfaced as a hint in Settings —
+    /// both stay tracked, since the session-key copy still offers claude.ai.
+    var claudeCodeDuplicate: Account? {
+        guard let email = claudeCodeAccount?.email?.lowercased(), !email.isEmpty else { return nil }
+        return accounts.first { !$0.isClaudeCode && $0.email?.lowercased() == email }
+    }
+
+    private static func makeClaudeCodeAccount(label: String?, email: String?) -> Account {
+        let name = label?.trimmingCharacters(in: .whitespaces) ?? ""
+        var account = Account(id: Account.claudeCodeId,
+                              label: name.isEmpty ? "Claude Code" : name,
+                              sessionKey: "",
+                              email: email,
+                              status: .offline)
+        account.source = .claudeCode
+        return account
+    }
+
+    func refreshClaudeCode() async {
+        guard claudeCodeAccount != nil else { return }
+        let outcome = await ClaudeCodeService.shared.fetchUsage()
+        guard let idx = accounts.firstIndex(where: { $0.isClaudeCode }) else { return }
+
+        switch outcome {
+        case .success(let quota, let identity):
+            if let identity { applyClaudeCodeIdentity(identity, index: idx) }
+            accounts[idx].quota = quota
+            accounts[idx].lastFetchTime = Date()
+            accounts[idx].status = .online
+            accounts[idx].errorMsg = nil
+            accounts[idx].noticeMsg = nil
+            checkSessionUsageAlert(index: idx)
+            checkModelWeeklyAlerts(index: idx)
+        case .rateLimited(let until):
+            // Keep showing the last good values; nothing is fetched until the
+            // cooldown ends, so there is nothing newer to show anyway.
+            let minutes = max(1, Int((until.timeIntervalSinceNow / 60).rounded(.up)))
+            let notice = "Rate limited, retrying in ~\(minutes)m"
+            if accounts[idx].quota != nil {
+                accounts[idx].status = .online
+                accounts[idx].noticeMsg = notice
+            } else {
+                accounts[idx].status = .error
+                accounts[idx].errorMsg = "Updates blocked by Anthropic. \(notice)."
+            }
+        case .failure(let error):
+            accounts[idx].quota = nil
+            accounts[idx].status = .error
+            accounts[idx].errorMsg = error.localizedDescription
+            accounts[idx].noticeMsg = nil
+        }
+    }
+
+    /// Follows the Claude Code login. When it now belongs to another account,
+    /// the previous account's alert latches are cleared so the new account's
+    /// alerts fire from scratch; the pin stays, since it names the card.
+    private func applyClaudeCodeIdentity(_ identity: ClaudeCodeService.Identity, index idx: Int) {
+        if let uuid = identity.accountUuid {
+            if let previous = accounts[idx].accountUuid, previous != uuid {
+                accounts[idx].alertedHighUsage = false
+                accounts[idx].alertedModelWeekly.removeAll()
+            }
+            accounts[idx].accountUuid = uuid
+        }
+        if let email = identity.email, !email.isEmpty, accounts[idx].email != email {
+            accounts[idx].email = email
+            saveToDisk()
+        }
+    }
+
+    /// Links the Claude Code login. Refuses (returning the reason) when there
+    /// is no usable login, so the card is never created in a broken state.
+    func linkClaudeCode() async -> String? {
+        guard claudeCodeAccount == nil else { return nil }
+        switch await ClaudeCodeService.shared.checkLogin() {
+        case .failure(let error):
+            return error.localizedDescription
+        case .success(let identity):
+            var account = Self.makeClaudeCodeAccount(label: nil, email: identity?.email)
+            account.accountUuid = identity?.accountUuid
+            account.status = .syncing
+            accounts.insert(account, at: 0)
+            saveToDisk()
+            await refreshClaudeCode()
+            aggregateGlobalStatus()
+            return nil
+        }
+    }
+
+    /// Removes the card only — Claude Code's own login is never touched.
+    func unlinkClaudeCode() {
+        removeAccount(id: Account.claudeCodeId)
+    }
+
+    func renameClaudeCode(_ label: String) {
+        guard let idx = accounts.firstIndex(where: { $0.isClaudeCode }) else { return }
+        let name = label.trimmingCharacters(in: .whitespaces)
+        accounts[idx].label = name.isEmpty ? "Claude Code" : name
         saveToDisk()
     }
 
@@ -579,6 +709,10 @@ final class AppState: ObservableObject {
     // MARK: - Session automation
 
     func startSession(account: Account) {
+        if account.isClaudeCode {
+            ClaudeCodeTerminalLauncher.open()
+            return
+        }
         SessionWindowController.start(accountId: account.id, sessionKey: account.sessionKey)
     }
 

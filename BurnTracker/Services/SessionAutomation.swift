@@ -114,3 +114,30 @@ extension SessionWindowController: WKNavigationDelegate {
         }
     }
 }
+
+/// Starts a Claude Code session in the user's terminal, for the direct
+/// (Claude Code) account — its OAuth login can't become a claude.ai cookie, so
+/// the web-view path above doesn't apply. Like that path it only opens the
+/// session; the 5-hour window starts when the user sends their first message.
+///
+/// A throwaway `.command` script is handed to `open`, which runs it in whatever
+/// app handles `.command` files (Terminal unless the user changed it). That
+/// needs no Automation permission, and `claude` resolves through the login
+/// shell's `PATH` exactly as it would if the user typed it.
+enum ClaudeCodeTerminalLauncher {
+    @MainActor
+    static func open() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BurnTracker-claude-\(UUID().uuidString).command")
+        // The script deletes itself first, so nothing is left behind in tmp.
+        let script = "#!/bin/sh\nrm -f \"$0\"\ncd ~ || exit 1\nexec claude\n"
+        do {
+            try Data(script.utf8).write(to: url, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        } catch {
+            NSLog("BurnTracker: failed to write Claude Code launcher: \(error.localizedDescription)")
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+}

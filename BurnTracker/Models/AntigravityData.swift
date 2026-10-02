@@ -35,6 +35,13 @@ struct TrackerSettings: Codable {
         var token: String
         var email: String?
     }
+    /// The Claude Code account. `token` is the `"local-creds"` placeholder —
+    /// the OAuth credential stays in Claude Code's own store.
+    struct PersistedClaudeCode: Codable {
+        var token: String
+        var email: String?
+        var label: String?
+    }
 
     var accounts: [PersistedAccount]
     /// The linked Antigravity IDE account (local language-server source).
@@ -43,6 +50,8 @@ struct TrackerSettings: Codable {
     var geminiAccount: PersistedAg?
     /// The linked Command Code account (`cmd` CLI, commandcode.ai API).
     var commandCodeAccount: PersistedAg?
+    /// The Claude Code account (the `claude` CLI's own login on this Mac).
+    var claudeCodeAccount: PersistedClaudeCode?
     /// Token of the provider pinned to the menu bar (see `PinnedProvider`).
     var pinnedProvider: String?
     var refreshMinutes: Int
@@ -50,7 +59,7 @@ struct TrackerSettings: Codable {
     var cardOrder: [String]?
 
     enum CodingKeys: String, CodingKey {
-        case accounts, agAccount, geminiAccount, commandCodeAccount, pinnedProvider
+        case accounts, agAccount, geminiAccount, commandCodeAccount, claudeCodeAccount, pinnedProvider
         case refreshMinutes, alertThreshold, cardOrder
     }
 
@@ -58,6 +67,7 @@ struct TrackerSettings: Codable {
          agAccount: PersistedAg? = nil,
          geminiAccount: PersistedAg? = nil,
          commandCodeAccount: PersistedAg? = nil,
+         claudeCodeAccount: PersistedClaudeCode? = nil,
          pinnedProvider: String? = nil,
          refreshMinutes: Int = 15,
          alertThreshold: Int = 80,
@@ -66,6 +76,7 @@ struct TrackerSettings: Codable {
         self.agAccount = agAccount
         self.geminiAccount = geminiAccount
         self.commandCodeAccount = commandCodeAccount
+        self.claudeCodeAccount = claudeCodeAccount
         self.pinnedProvider = pinnedProvider
         self.refreshMinutes = refreshMinutes
         self.alertThreshold = alertThreshold
@@ -78,6 +89,7 @@ struct TrackerSettings: Codable {
         agAccount = try? c.decode(PersistedAg.self, forKey: .agAccount)
         geminiAccount = try? c.decode(PersistedAg.self, forKey: .geminiAccount)
         commandCodeAccount = try? c.decode(PersistedAg.self, forKey: .commandCodeAccount)
+        claudeCodeAccount = try? c.decode(PersistedClaudeCode.self, forKey: .claudeCodeAccount)
         pinnedProvider = try? c.decode(String.self, forKey: .pinnedProvider)
         refreshMinutes = (try? c.decode(Int.self, forKey: .refreshMinutes)) ?? 15
         alertThreshold = (try? c.decode(Int.self, forKey: .alertThreshold)) ?? 80

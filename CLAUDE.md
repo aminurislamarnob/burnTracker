@@ -22,7 +22,7 @@ BurnTracker/
   Theme.swift                    color/design tokens
   Models/                        Account, QuotaData, AntigravityData, CommandCodeData,
                                  PinnedProvider, TrackerSettings
-  Services/                      ClaudeService, AntigravityService, CommandCodeService,
+  Services/                      ClaudeService, ClaudeCodeService, AntigravityService, CommandCodeService,
                                  CliQuotaSupport, Persistence, FileWatcher, NotificationManager,
                                  SessionAutomation
   Views/                         RootView, DashboardView, AccountCardView, CliQuotaCardView,
@@ -96,6 +96,21 @@ A third provider tracked the Gemini CLI's own quota via the Cloud Code API (`clo
 
 The `geminiAccount` key in `tracker-settings.json` is **still read and written back verbatim** (`AppState.retiredGeminiAccount`) rather than dropped, so a settings file written here still loads in the original Electron build. A stale `"gemini"` pin token now decodes to nil, which already falls the menu bar back to the plain glyph, and a stale `"gemini"` entry in `cardOrder` is filtered out by `visibleCardIDs` — neither needs a migration step.
 
+### Claude Code (direct) quota
+
+Besides session-key accounts, the user can connect **at most one** Claude account directly: the login Claude Code (the `claude` CLI) holds on this Mac. It is ported from openusage's Claude provider (`Sources/OpenUsage/Providers/Claude/`) and lives in `ClaudeCodeService`.
+
+- **One of the Claude accounts at runtime, persisted apart.** It is an `Account` with `source == .claudeCode` and the fixed id `Account.claudeCodeId` (`"claude-code"`), kept in `AppState.accounts`, so cards, pins (`claude:claude-code`, `claude-model:claude-code:<model>`), alerts, card order and global status need no special cases. `saveToDisk()` filters it **out of `accounts`** and writes it as `claudeCodeAccount: { token: "local-creds", email, label }`, because the Electron build would read a keyless `accounts` entry as a broken account.
+- **Credentials are read fresh on every fetch** from the Keychain item `Claude Code-credentials` (scoped to `$USER`, then unscoped), else `~/.claude/.credentials.json`, and never copied into `tracker-settings.json`. The Keychain goes through **`/usr/bin/security`, not Security.framework**: Claude Code itself uses `security`, so the tool is already on the item's ACL. A `SecItem` call would be judged by BurnTracker's ad-hoc signature, which changes every release and would re-prompt each update. Writes pass the value as hex through `security -i` on **stdin**, so the token never appears in `ps`, and are confirmed by reading back, because interactive mode always exits 0.
+- **Usage request.** `GET https://api.anthropic.com/api/oauth/usage` with `Authorization: Bearer …` and `anthropic-beta: oauth-2025-04-20`. The payload is claude.ai's shape and decodes straight into `QuotaData`, including the `limits` caps and `extra_usage`. Two things are **deliberately not done**: the User-Agent is an honest `BurnTracker/<version>` rather than openusage's `claude-cli/…` spoof, and there is no `cedar_ember=1`. Reset grants are therefore not shown.
+- **When it refreshes.** Through `platform.claude.com/v1/oauth/token` with Claude Code's client id, when the token is within 5 minutes of expiry or once after a 401/403.
+- **Refresh writes back, and the write is guarded.** Anthropic rotates the refresh token on use, so refreshing without saving would sign Claude Code out. The store is re-read first and left alone if Claude Code changed it meanwhile (the new access token is then used for that fetch only). Only `accessToken` / `refreshToken` / `expiresAt` are merged into the existing document, so any other fields survive. Overlapping fetches are collapsed into one in-flight task (the service is an `actor`) so two refreshes never race on the same token.
+- **Rate limits.** A 429 honours `Retry-After` (default 5 min). No request is made until the cooldown ends, and the card keeps its last quota with `Account.noticeMsg` ("Rate limited, retrying in ~Nm") in place of the "Updated …" line.
+- **Identity.** It comes from `~/.claude.json` → `oauthAccount` (`accountUuid`, `emailAddress`). When `accountUuid` changes (a `claude login` as someone else), the alert latches are cleared and the pin is kept. `claudeCodeDuplicate` matches a session-key account by email, and that only drives a hint in Settings. Both cards stay.
+- **Linking.** Connect refuses, giving the reason, when there is no usable login: none found, Keychain denied, or a token without the `user:profile` scope. A broken card is never created. Unlinking removes the card only and never touches Claude Code's login.
+- **"Start session" button.** The OAuth login can't become a claude.ai cookie, so this button runs `ClaudeCodeTerminalLauncher` instead: a self-deleting `.command` script (`cd ~ && exec claude`) handed to `open`. That needs no Automation permission and uses the login shell's `PATH`.
+- **Deliberately unsupported:** Claude Desktop's token cache, Claude Swap, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CONFIG_DIR`, and the hosted web dashboard. The dashboard can't share a rotating refresh token with this Mac's CLI.
+
 ### Command Code quota (a differently-shaped provider)
 
 Command Code (the `cmd` CLI) is tracked independently via `commandCodeAccount`. It does **not** reuse `AGGroup`/`CliQuotaCardView`, because its quota model is different: it bills in **credits** (dollars against a monthly plan allowance), with optional 5-hour/weekly *request* windows on top. Hence its own `CommandCodeData` model and `CommandCodeCardView`.
@@ -114,7 +129,7 @@ The API key is **read fresh from `~/.commandcode/auth.json` on every fetch** and
 
 State is stored as JSON in `~/.claude/tracker-settings.json` (`Persistence.swift`), the **same file and shape** as the original Electron build (drop-in compatible):
 - `accounts` — `{ id, label, sessionKey }`. Transient runtime fields (`status`, `quota`, `lastFetchTime`, `alertedHighUsage`) are stripped before writing in `AppState.saveToDisk()`.
-- `agAccount` (Antigravity) and `commandCodeAccount` (Command Code) — each `{ token, email }`; plus `geminiAccount`, retired but round-tripped verbatim (see above); plus `refreshMinutes` and `alertThreshold`. Every provider key is decoded optionally, so legacy files (e.g. with only `agAccount`) still load and the missing providers simply start unlinked. `pinnedProvider` (the menu-bar pin token) is likewise optional.
+- `agAccount` (Antigravity) and `commandCodeAccount` (Command Code) — each `{ token, email }`; `claudeCodeAccount` (Claude Code direct) — `{ token: "local-creds", email, label }`; plus `geminiAccount`, retired but round-tripped verbatim (see above); plus `refreshMinutes` and `alertThreshold`. Every provider key is decoded optionally, so legacy files (e.g. with only `agAccount`) still load and the missing providers simply start unlinked. `pinnedProvider` (the menu-bar pin token) is likewise optional.
 
 **Session keys are stored in plaintext** on disk — keep them local, never log them, and never transmit them anywhere except Claude.ai.
 

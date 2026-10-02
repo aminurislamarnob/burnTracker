@@ -14,9 +14,9 @@ struct ClaudeAccountCardView: View {
         Card {
             CompactCardHeader(
                 title: account.label,
-                detail: account.email ?? account.maskedKey,
+                detail: account.email ?? (account.isClaudeCode ? "This Mac" : account.maskedKey),
                 statusLine: statusLine,
-                subtitle: "Claude.ai",
+                subtitle: account.isClaudeCode ? "Claude Code" : "Claude.ai",
                 iconName: "ProviderIcon-claude",
                 iconTint: Theme.accent,
                 isPinned: app.isPinned(.claude(account.id)),
@@ -35,7 +35,9 @@ struct ClaudeAccountCardView: View {
         switch account.status {
         case .syncing where account.quota == nil: return "Updating…"
         case .error: return "Update failed"
-        default: return "Updated \(TimeFormat.relative(account.lastFetchTime))"
+        default:
+            if let notice = account.noticeMsg { return notice }
+            return "Updated \(TimeFormat.relative(account.lastFetchTime))"
         }
     }
 
@@ -131,7 +133,7 @@ struct ClaudeAccountCardView: View {
     }
 
     private var startButton: some View {
-        Button(sending ? "Opening…" : "Start session now") {
+        Button(sending ? "Opening…" : (account.isClaudeCode ? "Start session in Terminal" : "Start session now")) {
             sending = true
             app.startSession(account: account)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { sending = false }

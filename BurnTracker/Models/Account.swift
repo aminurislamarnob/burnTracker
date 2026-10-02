@@ -15,12 +15,30 @@ enum GlobalStatus: String {
     case error
 }
 
-/// A single Claude.ai account. Persisted fields are `id`, `label`, `sessionKey`;
+/// How a Claude account is connected.
+enum ClaudeAccountSource {
+    /// A claude.ai `sessionKey` cookie the user pasted in.
+    case sessionKey
+    /// The login Claude Code (the `claude` CLI) holds on this Mac. At most one;
+    /// it always has `Account.claudeCodeId` and an empty `sessionKey`.
+    case claudeCode
+}
+
+/// A single Claude account. Persisted fields are `id`, `label`, `sessionKey`;
 /// the rest are transient runtime state (stripped before writing to disk).
+///
+/// The Claude Code account lives in `AppState.accounts` alongside the
+/// session-key ones, so cards, pins, alerts and ordering treat it as any other
+/// Claude account — but it is persisted under its own `claudeCodeAccount` key,
+/// never in `accounts`, so the Electron build never sees a keyless account.
 struct Account: Identifiable {
+    /// The fixed id of the Claude Code account (pin token `claude:claude-code`).
+    static let claudeCodeId = "claude-code"
+
     let id: String
     var label: String
     var sessionKey: String
+    var source: ClaudeAccountSource = .sessionKey
 
     /// The account's email address, fetched from `/api/bootstrap` and cached to
     /// disk so it shows immediately on the next launch.
@@ -36,6 +54,14 @@ struct Account: Identifiable {
     /// model display name — one latch per cap, so Fable crossing the threshold
     /// never disarms a later alert for another scoped model.
     var alertedModelWeekly: Set<String> = []
+    /// Claude Code only: the signed-in account's uuid, so a `claude login` as
+    /// someone else can be told apart from a normal refresh.
+    var accountUuid: String?
+    /// Claude Code only: a non-fatal notice (rate limiting) shown in place of
+    /// the "Updated …" line while the last good quota stays on screen.
+    var noticeMsg: String?
+
+    var isClaudeCode: Bool { source == .claudeCode }
 
     init(id: String = "acc_\(Int(Date().timeIntervalSince1970 * 1000))",
          label: String,

@@ -5,6 +5,7 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 15) {
+            claudeCodeCard
             claudeCard
             commandCodeCard
             antigravityCard
@@ -49,13 +50,58 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Claude Code (this Mac) card
+
+    private var claudeCodeCard: some View {
+        Card {
+            SettingsSectionTitle("Claude Code (this Mac)")
+            Text("Track the Claude account Claude Code is signed in to on this Mac — no session key needed. macOS may ask to allow access to Claude Code's login in your Keychain.")
+                .font(.system(size: 12))
+                .foregroundColor(Theme.textMuted)
+                .padding(.bottom, 12)
+
+            if let account = app.claudeCodeAccount {
+                Text("Linked (\(account.email ?? "Claude Code"))")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(Theme.textMain)
+                    .padding(.bottom, 12)
+
+                ClaudeCodeLabelField(label: account.label)
+                    .padding(.bottom, 12)
+
+                if let duplicate = app.claudeCodeDuplicate {
+                    Text("This is the same account as your session-key account \"\(duplicate.label)\". You may want to remove that one to avoid duplicate alerts.")
+                        .font(.system(size: 11))
+                        .foregroundColor(Theme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 12)
+                }
+            } else {
+                Text("Not linked.")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(Theme.textMain)
+                    .padding(.bottom, 12)
+            }
+
+            CliLinkControls(
+                isLinked: app.claudeCodeAccount != nil,
+                linkTitle: "Connect Claude Code",
+                link: { await app.linkClaudeCode() },
+                unlink: { app.unlinkClaudeCode() })
+        }
+    }
+
     // MARK: - Claude accounts card
+
+    private var sessionKeyAccounts: [Account] {
+        app.accounts.filter { !$0.isClaudeCode }
+    }
 
     private var claudeCard: some View {
         Card {
             SettingsSectionTitle("Claude Accounts")
 
-            if app.accounts.isEmpty {
+            if sessionKeyAccounts.isEmpty {
                 Text("No accounts added yet.")
                     .font(.system(size: 12))
                     .foregroundColor(Theme.textDimmed)
@@ -63,7 +109,7 @@ struct SettingsView: View {
                     .padding(.vertical, 15)
             } else {
                 VStack(spacing: 8) {
-                    ForEach(app.accounts) { account in
+                    ForEach(sessionKeyAccounts) { account in
                         AccountSettingsRow(account: account)
                     }
                 }
@@ -178,6 +224,31 @@ private struct AddAccountForm: View {
             }
             .buttonStyle(PrimaryButtonStyle())
         }
+    }
+}
+
+// MARK: - Claude Code label
+
+/// Renames the Claude Code card; committed on Return or when focus leaves.
+private struct ClaudeCodeLabelField: View {
+    @EnvironmentObject var app: AppState
+    let label: String
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            FieldLabel("Card Label")
+            TextField("Claude Code", text: $draft)
+                .textFieldStyle(BurnTextFieldStyle())
+                .focused($focused)
+                .onSubmit { app.renameClaudeCode(draft) }
+                .onChange(of: focused) { _, isFocused in
+                    if !isFocused { app.renameClaudeCode(draft) }
+                }
+        }
+        .onAppear { draft = label }
+        .onChange(of: label) { _, new in if !focused { draft = new } }
     }
 }
 
