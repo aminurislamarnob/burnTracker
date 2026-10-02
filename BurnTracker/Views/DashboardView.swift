@@ -216,12 +216,15 @@ struct DashboardView: View {
             Text("No Accounts Connected")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(Theme.textMain)
-            Text("Click the settings gear icon in the top right to configure your sessionKey cookies and start tracking quotas.")
+            Text("Click the settings gear icon in the top right to connect Claude Code on this Mac or add claude.ai sessionKey cookies, and start tracking quotas.")
                 .font(.system(size: 12))
                 .foregroundColor(Theme.textMuted)
                 .multilineTextAlignment(.center)
-            Button("Configure Settings") {
+            Button {
                 app.activeView = .settings
+            } label: {
+                Label("Configure Settings", systemImage: "gearshape")
+                    .labelStyle(.titleAndIcon)
             }
             .buttonStyle(PrimaryButtonStyle())
             .fixedSize()

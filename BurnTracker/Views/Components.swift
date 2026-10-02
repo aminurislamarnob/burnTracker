@@ -194,6 +194,7 @@ struct PrimaryButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
             .foregroundColor(.white)
+            .padding(.horizontal, 16)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
             .background(configuration.isPressed ? Theme.accentHover : Theme.accent)
@@ -206,6 +207,7 @@ struct SecondaryButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
             .foregroundColor(Theme.textMain)
+            .padding(.horizontal, 16)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
             .background(configuration.isPressed ? Theme.cardGlassHover : Theme.cardGlass)
