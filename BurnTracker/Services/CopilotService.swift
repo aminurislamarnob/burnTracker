@@ -1,6 +1,4 @@
-import AppKit
 import Foundation
-import Security
 
 /// GitHub Copilot usage. Reads a local GitHub OAuth token (Copilot CLI Keychain,
 /// editor config, or `gh`) and calls `GET /copilot_internal/user` — the same
@@ -9,7 +7,6 @@ enum CopilotService {
     private static let usageURL = URL(string: "https://api.github.com/copilot_internal/user")!
     private static let userURL = URL(string: "https://api.github.com/user")!
     private static let copilotKeychainService = "github-copilot-app"
-    private static let ghKeychainService = "gh:github.com"
     private static let editorAppsRelative = ".config/github-copilot/apps.json"
     private static let editorHostsRelative = ".config/github-copilot/hosts.json"
     private static let ghHostsRelative = ".config/gh/hosts.yml"
@@ -31,19 +28,21 @@ enum CopilotService {
     }
 
     static var hasCredentials: Bool {
-        loadToken() != nil
+        // Probe without Keychain UI — auto-link / has-check must never sheet.
+        loadToken(allowKeychainPrompt: false) != nil || hasCopilotHome
     }
 
     static func login() -> (email: String, token: String)? {
-        if let token = loadToken() {
+        // Files or silent Keychain only. Interactive unlock happens on refresh.
+        if let token = loadToken(allowKeychainPrompt: false) {
             return (cachedLoginHint(for: token) ?? "GitHub Copilot", "local-creds")
         }
         guard hasCopilotHome else { return nil }
         return ("GitHub Copilot", "local-creds")
     }
 
-    static func fetchQuota() async -> FetchOutcome {
-        guard let token = loadToken() else { return .notLoggedIn }
+    static func fetchQuota(allowKeychainPrompt: Bool = false) async -> FetchOutcome {
+        guard let token = loadToken(allowKeychainPrompt: allowKeychainPrompt) else { return .notLoggedIn }
 
         guard let response = await usageGET(token: token) else { return .failed }
         if response.status == 401 || response.status == 403 { return .unauthorized }
@@ -56,19 +55,21 @@ enum CopilotService {
 
     // MARK: - Token discovery
 
-    /// Sources tried prompt-free files first, then Keychain. Copilot CLI's
-    /// `github-copilot-app` item wins when present — that is what `copilot login` writes.
-    static func loadToken() -> String? {
-        loadFromCopilotKeychain()
-            ?? loadFromEditorConfig()
+    /// Prompt-free files first. Keychain only if needed — and only the Copilot
+    /// CLI item (never also `gh:github.com`, which was a second password sheet).
+    /// Interactive Keychain is opt-in (manual card Refresh) so launch never stacks
+    /// a Copilot sheet on top of Cursor Safe Storage.
+    static func loadToken(allowKeychainPrompt: Bool = false) -> String? {
+        loadFromEditorConfig()
             ?? loadFromGhConfig()
-            ?? loadFromGhKeychain()
+            ?? loadFromCopilotKeychain(allowInteractive: allowKeychainPrompt)
     }
 
-    private static func loadFromCopilotKeychain() -> String? {
-        guard let raw = copyGenericPassword(service: copilotKeychainService, account: nil) else {
-            return nil
-        }
+    private static func loadFromCopilotKeychain(allowInteractive: Bool) -> String? {
+        guard let raw = KeychainAccess.readGenericPassword(
+            service: copilotKeychainService,
+            accounts: [nil],
+            allowInteractive: allowInteractive) else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
@@ -90,26 +91,6 @@ enum CopilotService {
         guard let text = try? String(contentsOf: url, encoding: .utf8),
               let token = yamlValue(text, key: "oauth_token") else { return nil }
         return token
-    }
-
-    private static func loadFromGhKeychain() -> String? {
-        let account = ghUsername()
-        let raw: String?
-        if let account {
-            raw = copyGenericPassword(service: ghKeychainService, account: account)
-                ?? copyGenericPassword(service: ghKeychainService, account: nil)
-        } else {
-            raw = copyGenericPassword(service: ghKeychainService, account: nil)
-        }
-        guard let raw, let token = unwrapGoKeyring(raw) else { return nil }
-        return token
-    }
-
-    private static func ghUsername() -> String? {
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(ghHostsRelative)
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        return yamlValue(text, key: "user")
     }
 
     private static func cachedLoginHint(for token: String) -> String? {
@@ -385,26 +366,4 @@ enum CopilotService {
         min(100, max(0, value))
     }
 
-    // MARK: - Keychain
-
-    private static func copyGenericPassword(service: String, account: String?) -> String? {
-        NSApp.activate(ignoringOtherApps: true)
-        var query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIAllow
-        ]
-        if let account {
-            query[kSecAttrAccount as String] = account
-        }
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data,
-              let text = String(data: data, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-              !text.isEmpty else { return nil }
-        return text
-    }
 }

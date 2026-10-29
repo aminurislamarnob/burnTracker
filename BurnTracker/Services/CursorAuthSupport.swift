@@ -1,6 +1,4 @@
-import AppKit
 import Foundation
-import Security
 
 /// Reads Cursor session tokens from the Cursor app's local state DB and Keychain.
 /// Ported from openusage's `CursorAuthStore`.
@@ -35,13 +33,14 @@ enum CursorAuthSupport {
 
     static var hasCredentials: Bool { loadAuthState() != nil }
 
-    /// Candidate auth sources. The Cursor app / `cursor-agent` login lives in
-    /// `state.vscdb` (often encrypted). Try that before the separate Keychain
-    /// session item, which this menu-bar app may not be allowed to read.
+    /// Candidate auth sources. Prefer `state.vscdb` (one Safe Storage unlock) and
+    /// **skip** the separate Cursor session Keychain items whenever SQLite already
+    /// yields a usable JWT — those extra SecItem reads were stacking password sheets.
     static func loadAuthCandidates() -> [AuthState] {
         var candidates: [AuthState] = []
         if let state = sqliteAuthState() { candidates.append(state) }
-        if let state = keychainAuthState(), !candidates.contains(where: { $0.accessToken == state.accessToken }) {
+        // Only fall through to cursor-access-token when SQLite has nothing usable.
+        if candidates.isEmpty, let state = keychainAuthState() {
             candidates.append(state)
         }
         return candidates
@@ -53,7 +52,10 @@ enum CursorAuthSupport {
 
     private static func keychainAuthState() -> AuthState? {
         let access = readKeychainPassword(service: keychainAccessService)
-        let refresh = readKeychainPassword(service: keychainRefreshService)
+        // Refresh is optional — never show a second sheet for it.
+        let refresh = KeychainAccess.readGenericPasswordSilently(
+            service: keychainRefreshService,
+            accounts: ["cursor-user", NSUserName(), nil])
         guard isUsableAccessToken(access) || isUsableRefreshToken(refresh) else { return nil }
         return AuthState(accessToken: access, refreshToken: refresh, source: .keychain)
     }
@@ -63,23 +65,14 @@ enum CursorAuthSupport {
         // ciphertext. Decrypt before treating the row as a session.
         let access = CursorSafeStorage.unwrap(readSQLiteValue(accessTokenKey))
         let refresh = CursorSafeStorage.unwrap(readSQLiteValue(refreshTokenKey))
-        let membership = readSQLiteValue(membershipTypeKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         let usableAccess = isUsableAccessToken(access) ? access : nil
         let usableRefresh = isUsableRefreshToken(refresh) ? refresh : nil
         guard usableAccess != nil || usableRefresh != nil else { return nil }
 
-        // openusage: free-tier accounts can carry stale JWTs in SQLite while Keychain has the live session.
-        if membership == "free", let kc = keychainAuthState(),
-           let sqliteSub = tokenSubject(usableAccess),
-           let kcSub = tokenSubject(kc.accessToken),
-           sqliteSub != kcSub {
-            return kc
-        }
         // Keep the decrypted token out of state.vscdb. A refresh must not replace
         // Cursor's encrypted blob with a raw JWT.
-        return AuthState(accessToken: usableAccess, refreshToken: usableRefresh, source: .keychain)
+        return AuthState(accessToken: usableAccess, refreshToken: usableRefresh, source: .sqlite)
     }
 
     /// Cursor now stores encrypted blobs in `state.vscdb` (`cursor-safe-storage:v1:…`); only JWT-shaped
@@ -173,75 +166,20 @@ enum CursorAuthSupport {
     // MARK: - Keychain (generic password services Cursor uses)
 
     /// Cursor stores the live session as a generic password with account `cursor-user`.
-    /// `SecItem` (not the `security` CLI) is what can present the Keychain prompt from
-    /// this menu-bar app. The CLI call often fails with "interaction not allowed" and
-    /// never shows a dialog.
+    /// One interactive sheet max for this service (account variants are Fail-first).
     private static func readKeychainPassword(service: String) -> String? {
-        let accounts = ["cursor-user", NSUserName()]
-        for account in accounts {
-            if let value = copyGenericPassword(service: service, account: account) {
-                return value
-            }
-        }
-        return copyGenericPassword(service: service, account: nil)
-    }
-
-    private static func copyGenericPassword(service: String, account: String?) -> String? {
-        NSApp.activate(ignoringOtherApps: true)
-        var query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIAllow
-        ]
-        if let account {
-            query[kSecAttrAccount as String] = account
-        }
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data,
-              let text = String(data: data, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-              !text.isEmpty else { return nil }
-        return text
+        KeychainAccess.readGenericPassword(
+            service: service,
+            accounts: ["cursor-user", NSUserName(), nil])
     }
 
     private static func writeKeychainPassword(_ value: String, service: String) -> Bool {
         let user = NSUserName()
         let hex = Data(value.utf8).map { String(format: "%02x", $0) }.joined()
         let command = "add-generic-password -U -a \"\(user.replacingOccurrences(of: "\"", with: "\\\""))\" -s \"\(service)\" -X \(hex)\n"
-        _ = runSecurity(["-i"], input: Data(command.utf8))
+        _ = KeychainAccess.runSecurity(["-i"], input: Data(command.utf8))
+        KeychainAccess.invalidate(service: service)
         return readKeychainPassword(service: service) == value
-    }
-
-    private static func runSecurity(_ arguments: [String], input: Data? = nil) -> (status: Int32, output: Data) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = arguments
-        let stdout = Pipe()
-        process.standardOutput = stdout
-        process.standardError = FileHandle.nullDevice
-        if let input {
-            let stdin = Pipe()
-            process.standardInput = stdin
-            do {
-                try process.run()
-            } catch {
-                return (-1, Data())
-            }
-            stdin.fileHandleForWriting.write(input)
-            try? stdin.fileHandleForWriting.close()
-        } else {
-            do {
-                try process.run()
-            } catch {
-                return (-1, Data())
-            }
-        }
-        let output = stdout.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return (process.terminationStatus, output)
     }
 
     private static func jwtExpiration(_ token: String) -> Date? {

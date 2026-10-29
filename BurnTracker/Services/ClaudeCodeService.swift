@@ -115,7 +115,8 @@ actor ClaudeCodeService {
     /// Keychain here is what surfaces macOS's access prompt, right after the
     /// user clicked rather than unprompted at launch.
     func checkLogin() -> Result<Identity?, FetchError> {
-        switch Self.readStored() {
+        // Connect is a deliberate click — allow one Keychain sheet.
+        switch Self.readStored(allowInteractive: true) {
         case .failure(let error):
             return .failure(error)
         case .success(let stored):
@@ -126,9 +127,9 @@ actor ClaudeCodeService {
         }
     }
 
-    func fetchUsage() async -> Outcome {
+    func fetchUsage(allowKeychainPrompt: Bool = false) async -> Outcome {
         if let inFlight { return await inFlight.value }
-        let task = Task { await self.performFetch() }
+        let task = Task { await self.performFetch(allowKeychainPrompt: allowKeychainPrompt) }
         inFlight = task
         let outcome = await task.value
         inFlight = nil
@@ -137,12 +138,12 @@ actor ClaudeCodeService {
 
     // MARK: - Fetch
 
-    private func performFetch() async -> Outcome {
+    private func performFetch(allowKeychainPrompt: Bool) async -> Outcome {
         if let until = cooldownUntil, until > Date() { return .rateLimited(until: until) }
         cooldownUntil = nil
 
         var stored: Stored
-        switch Self.readStored() {
+        switch Self.readStored(allowInteractive: allowKeychainPrompt) {
         case .failure(let error): return .failure(error)
         case .success(let s): stored = s
         }
@@ -296,7 +297,7 @@ actor ClaudeCodeService {
     /// the meantime its copy is newer and wins; the new access token is then
     /// used for this fetch only. A failed write is likewise non-fatal.
     private static func saveIfUnchanged(_ updated: Stored, original: Stored) {
-        guard case .success(let latest) = readStored(),
+        guard case .success(let latest) = readStored(allowInteractive: false),
               latest.source == original.source,
               latest.refreshToken == original.refreshToken,
               latest.accessToken == original.accessToken else {
@@ -332,9 +333,9 @@ actor ClaudeCodeService {
 
     /// Keychain first (what Claude Code uses on macOS), then the plain file it
     /// falls back to where the Keychain is unavailable.
-    private static func readStored() -> Result<Stored, FetchError> {
+    private static func readStored(allowInteractive: Bool) -> Result<Stored, FetchError> {
         var denied = false
-        switch Keychain.read(service: keychainService) {
+        switch Keychain.read(service: keychainService, allowInteractive: allowInteractive) {
         case .found(let data, let account):
             if let stored = parse(data, source: .keychain(account: account)) { return .success(stored) }
         case .denied:
@@ -389,21 +390,23 @@ private enum Keychain {
     /// `security`'s exit status for errSecItemNotFound.
     private static let notFoundStatus: Int32 = 44
 
-    static func read(service: String) -> ReadResult {
+    static func read(service: String, allowInteractive: Bool = false) -> ReadResult {
         let user = NSUserName()
-        // Scoped to this user first (how Claude Code writes it), then unscoped.
-        let scoped = run(["find-generic-password", "-a", user, "-s", service, "-w"])
-        if scoped.status == 0, let data = decode(scoped.output) { return .found(data, account: user) }
-        // Anything but "not found" means the item exists and access was refused;
-        // retrying unscoped would only show the user a second prompt.
-        if scoped.status != 0 && scoped.status != notFoundStatus { return .denied }
-
-        let unscoped = run(["find-generic-password", "-s", service, "-w"])
-        if unscoped.status == 0, let data = decode(unscoped.output) {
-            return .found(data, account: accountAttribute(service: service))
+        // Silent by default on auto-refresh so Claude never stacks a second
+        // sheet after Cursor. Manual Refresh passes allowInteractive: true.
+        switch KeychainAccess.readViaSecurityCLI(
+            service: service,
+            accounts: [user, nil],
+            allowInteractive: allowInteractive
+        ) {
+        case .value(let text):
+            guard let data = decode(Data(text.utf8)) else { return .notFound }
+            return .found(data, account: accountAttribute(service: service) ?? user)
+        case .denied:
+            return .denied
+        case .missing:
+            return .notFound
         }
-        if scoped.status == notFoundStatus && unscoped.status == notFoundStatus { return .notFound }
-        return .denied
     }
 
     /// Updates the item in place (`-U`). The secret is passed as hex through
@@ -415,7 +418,8 @@ private enum Keychain {
         var command = "add-generic-password -U"
         if let account { command += " -a \(quoted(account))" }
         command += " -s \(quoted(service)) -X \(hex)\n"
-        _ = run(["-i"], input: Data(command.utf8))
+        _ = KeychainAccess.runSecurity(["-i"], input: Data(command.utf8))
+        KeychainAccess.invalidate(service: service)
 
         let check = account.map { run(["find-generic-password", "-a", $0, "-s", service, "-w"]) }
             ?? run(["find-generic-password", "-s", service, "-w"])

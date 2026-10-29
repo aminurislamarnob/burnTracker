@@ -58,7 +58,7 @@ struct SettingsView: View {
     private var claudeCodeCard: some View {
         Card {
             SettingsSectionTitle("Claude Code (this Mac)")
-            Text("Track the Claude account Claude Code is signed in to on this Mac — no session key needed. macOS may ask to allow access to Claude Code's login in your Keychain.")
+            Text("Track the Claude account Claude Code is signed in to on this Mac — no session key needed. macOS may ask once for Keychain access; choose Always Allow so refreshes never ask again.")
                 .font(.system(size: 12))
                 .foregroundColor(Theme.textMuted)
                 .padding(.bottom, 12)
@@ -180,7 +180,7 @@ struct SettingsView: View {
     private var cursorCard: some View {
         Card {
             SettingsSectionTitle("Cursor Account")
-            Text("Link the Cursor app login on this Mac to track plan, Auto, and API usage from the Cursor dashboard APIs.")
+            Text("Link the Cursor app login on this Mac to track Cursor Models / Other Models / Plan usage. macOS may ask once for Keychain access — choose Always Allow.")
                 .font(.system(size: 12))
                 .foregroundColor(Theme.textMuted)
                 .padding(.bottom, 12)
@@ -226,7 +226,7 @@ struct SettingsView: View {
     private var copilotCard: some View {
         Card {
             SettingsSectionTitle("GitHub Copilot Account")
-            Text("Link your Copilot CLI login (or GitHub CLI) to track monthly AI Credits and free-tier chat/completions quotas.")
+            Text("Link your Copilot CLI login (or GitHub CLI) to track monthly AI Credits. macOS may ask once for Keychain access — choose Always Allow.")
                 .font(.system(size: 12))
                 .foregroundColor(Theme.textMuted)
                 .padding(.bottom, 12)

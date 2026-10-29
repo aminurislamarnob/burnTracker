@@ -39,6 +39,9 @@ final class AppState: ObservableObject {
     private var fileWatchers: [FileWatcher] = []
     private var watchDebounce: DispatchWorkItem?
     private var launched = false
+    /// Collapses overlapping refreshAll (launch + popover + timer) so Keychain
+    /// work never runs twice in parallel.
+    private var refreshAllInFlight: Task<Void, Never>?
 
     // MARK: - Lifecycle
 
@@ -208,6 +211,19 @@ final class AppState: ObservableObject {
     /// Re-syncs everything. Invoked by the popover opening, the background
     /// timer, and the file watchers.
     func refreshAll() async {
+        if let refreshAllInFlight {
+            await refreshAllInFlight.value
+            return
+        }
+        let task = Task { @MainActor in
+            await self.performRefreshAll()
+        }
+        refreshAllInFlight = task
+        await task.value
+        refreshAllInFlight = nil
+    }
+
+    private func performRefreshAll() async {
         guard hasAnyAccount else { return }
 
         restartAutoRefreshTimer()
@@ -221,14 +237,21 @@ final class AppState: ObservableObject {
         if copilotAccount != nil { copilotAccount?.status = .syncing }
         updateGlobalStatus()
 
+        // Keychain-backed providers run serially. Cursor may show the one allowed
+        // password sheet (Safe Storage). Copilot / Claude Code stay silent on
+        // auto-refresh — tap Refresh on that card to allow a sheet.
+        if cursorAccount != nil {
+            await refreshCursor(allowKeychainPrompt: false)
+        }
+        if copilotAccount != nil {
+            await refreshCopilot(allowKeychainPrompt: false)
+        }
+        if accounts.contains(where: \.isClaudeCode) {
+            await refreshClaudeCode(allowKeychainPrompt: false)
+        }
+
         await withTaskGroup(of: Void.self) { group in
-            for account in accounts {
-                if account.isClaudeCode {
-                    group.addTask { [weak self] in
-                        await self?.refreshClaudeCode()
-                    }
-                    continue
-                }
+            for account in accounts where !account.isClaudeCode {
                 let id = account.id
                 let key = account.sessionKey
                 group.addTask { [weak self] in
@@ -247,19 +270,9 @@ final class AppState: ObservableObject {
                     await self?.refreshCommandCode()
                 }
             }
-            if cursorAccount != nil {
-                group.addTask { [weak self] in
-                    await self?.refreshCursor()
-                }
-            }
             if grokAccount != nil {
                 group.addTask { [weak self] in
                     await self?.refreshGrok()
-                }
-            }
-            if copilotAccount != nil {
-                group.addTask { [weak self] in
-                    await self?.refreshCopilot()
                 }
             }
         }
@@ -301,7 +314,7 @@ final class AppState: ObservableObject {
         guard let idx = accounts.firstIndex(where: { $0.id == id }) else { return }
         accounts[idx].status = .syncing
         if accounts[idx].isClaudeCode {
-            await refreshClaudeCode()
+            await refreshClaudeCode(allowKeychainPrompt: true)
             aggregateGlobalStatus()
             return
         }
@@ -348,9 +361,12 @@ final class AppState: ObservableObject {
         return account
     }
 
-    func refreshClaudeCode() async {
+    func refreshClaudeCode(allowKeychainPrompt: Bool = false) async {
         guard claudeCodeAccount != nil else { return }
-        let outcome = await ClaudeCodeService.shared.fetchUsage()
+        if allowKeychainPrompt || claudeCodeAccount?.status == .error {
+            KeychainAccess.invalidate(service: "Claude Code-credentials", rearmPrompt: allowKeychainPrompt)
+        }
+        let outcome = await ClaudeCodeService.shared.fetchUsage(allowKeychainPrompt: allowKeychainPrompt)
         guard let idx = accounts.firstIndex(where: { $0.isClaudeCode }) else { return }
 
         switch outcome {
@@ -470,8 +486,15 @@ final class AppState: ObservableObject {
         }
     }
 
-    func refreshCursor() async {
+    func refreshCursor(allowKeychainPrompt: Bool = false) async {
         guard cursorAccount?.token.isEmpty == false else { return }
+        // After a Keychain denial the outcome is cached; a manual refresh must
+        // clear it so macOS can ask once more (choose Always Allow).
+        if allowKeychainPrompt || cursorAccount?.status == .error {
+            KeychainAccess.invalidate(service: "cursor-access-token", rearmPrompt: allowKeychainPrompt)
+            KeychainAccess.invalidate(service: "cursor-refresh-token", rearmPrompt: allowKeychainPrompt)
+            KeychainAccess.invalidate(service: "Cursor Safe Storage", rearmPrompt: allowKeychainPrompt)
+        }
         switch await CursorService.fetchQuota() {
         case .success(let email, let quota):
             if let email { cursorAccount?.email = email }
@@ -481,7 +504,7 @@ final class AppState: ObservableObject {
             cursorAccount?.status = .online
             checkCursorUsageAlert()
         case .notLoggedIn:
-            cursorAccount?.statusMessage = "Allow Keychain access for Cursor, then refresh."
+            cursorAccount?.statusMessage = "Tap refresh and choose Always Allow for Keychain."
             cursorAccount?.status = .error
         case .unauthorized:
             cursorAccount?.statusMessage = "Cursor session expired. Sign in again in the Cursor app."
@@ -514,9 +537,13 @@ final class AppState: ObservableObject {
         }
     }
 
-    func refreshCopilot() async {
+    func refreshCopilot(allowKeychainPrompt: Bool = false) async {
         guard copilotAccount?.token.isEmpty == false else { return }
-        switch await CopilotService.fetchQuota() {
+        if allowKeychainPrompt || copilotAccount?.status == .error {
+            KeychainAccess.invalidate(service: "github-copilot-app", rearmPrompt: allowKeychainPrompt)
+            KeychainAccess.invalidate(service: "gh:github.com", rearmPrompt: allowKeychainPrompt)
+        }
+        switch await CopilotService.fetchQuota(allowKeychainPrompt: allowKeychainPrompt) {
         case .success(let email, let quota):
             if let email { copilotAccount?.email = email }
             copilotAccount?.quota = quota
@@ -525,7 +552,7 @@ final class AppState: ObservableObject {
             copilotAccount?.status = .online
             checkCopilotUsageAlert()
         case .notLoggedIn:
-            copilotAccount?.statusMessage = "Allow Keychain access for Copilot, or run `copilot login`."
+            copilotAccount?.statusMessage = "Tap refresh and choose Always Allow for Keychain (or run `copilot login`)."
             copilotAccount?.status = .error
         case .unauthorized:
             copilotAccount?.statusMessage = "Copilot auth expired. Run `copilot login` again."
@@ -885,7 +912,7 @@ final class AppState: ObservableObject {
         }
         cursorAccount = CursorAccount(token: creds.token, email: creds.email, status: .syncing)
         saveToDisk()
-        await refreshCursor()
+        await refreshCursor(allowKeychainPrompt: true)
         aggregateGlobalStatus()
         return nil
     }
@@ -925,7 +952,7 @@ final class AppState: ObservableObject {
         }
         copilotAccount = CopilotAccount(token: creds.token, email: creds.email, status: .syncing)
         saveToDisk()
-        await refreshCopilot()
+        await refreshCopilot(allowKeychainPrompt: true)
         aggregateGlobalStatus()
         return nil
     }
