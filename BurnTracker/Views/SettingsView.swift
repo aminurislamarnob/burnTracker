@@ -8,6 +8,8 @@ struct SettingsView: View {
             claudeCodeCard
             claudeCard
             commandCodeCard
+            cursorCard
+            grokCard
             antigravityCard
             generalCard
         }
@@ -19,7 +21,7 @@ struct SettingsView: View {
         Card {
             SettingsSectionTitle("Auto-Refresh")
             LabeledField("Background sync interval",
-                         help: "Applies to all providers — Claude, Command Code, and Antigravity. Quotas also refresh instantly whenever you open the widget.") {
+                         help: "Applies to all providers. Quotas also refresh instantly whenever you open the widget.") {
                 Picker("", selection: Binding(
                     get: { app.refreshMinutes },
                     set: { app.setRefreshMinutes($0) })) {
@@ -35,8 +37,8 @@ struct SettingsView: View {
             Divider24()
 
             SettingsSectionTitle("Notifications")
-            LabeledField("Alert when 5-hour usage reaches",
-                         help: "Sends a macOS notification the first time any provider's 5-hour quota crosses this usage level. For Antigravity, usage is measured against its remaining quota; Command Code plans without a 5-hour window are not alerted.") {
+            LabeledField("Alert when usage reaches",
+                         help: "Sends a macOS notification the first time a linked provider crosses this level. Each provider uses its primary meter (Claude 5-hour, Antigravity 5-hour remaining, Command Code 5-hour when present, Cursor plan usage, Grok weekly pool).") {
                 Picker("", selection: Binding(
                     get: { app.alertThreshold },
                     set: { app.setAlertThreshold($0) })) {
@@ -169,6 +171,52 @@ struct SettingsView: View {
                 linkTitle: "Sync with Command Code",
                 link: { await app.linkCommandCode() },
                 unlink: { app.unlinkCommandCode() })
+        }
+    }
+
+    // MARK: - Cursor card
+
+    private var cursorCard: some View {
+        Card {
+            SettingsSectionTitle("Cursor Account")
+            Text("Link the Cursor app login on this Mac to track plan, Auto, and API usage from the Cursor dashboard APIs.")
+                .font(.system(size: 12))
+                .foregroundColor(Theme.textMuted)
+                .padding(.bottom, 12)
+
+            Text(app.cursorAccount != nil ? "Linked (\(app.cursorAccount?.email ?? ""))" : "Not linked.")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Theme.textMain)
+                .padding(.bottom, 12)
+
+            CliLinkControls(
+                isLinked: app.cursorAccount != nil,
+                linkTitle: "Sync with Cursor",
+                link: { await app.linkCursor() },
+                unlink: { app.unlinkCursor() })
+        }
+    }
+
+    // MARK: - Grok card
+
+    private var grokCard: some View {
+        Card {
+            SettingsSectionTitle("Grok Account")
+            Text("Link your Grok CLI login to track the weekly shared pool and pay-as-you-go cap.")
+                .font(.system(size: 12))
+                .foregroundColor(Theme.textMuted)
+                .padding(.bottom, 12)
+
+            Text(app.grokAccount != nil ? "Linked (\(app.grokAccount?.email ?? ""))" : "Not linked.")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Theme.textMain)
+                .padding(.bottom, 12)
+
+            CliLinkControls(
+                isLinked: app.grokAccount != nil,
+                linkTitle: "Sync with Grok",
+                link: { await app.linkGrok() },
+                unlink: { app.unlinkGrok() })
         }
     }
 

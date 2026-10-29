@@ -194,6 +194,18 @@ struct DashboardView: View {
                 isPinned: app.isPinned(.commandCode),
                 onTogglePin: { app.togglePin(.commandCode) },
                 onRefresh: { Task { await app.refreshCommandCode() } })
+        } else if cardId == "cursor", let cursor = app.cursorAccount {
+            CursorCardView(
+                account: cursor,
+                isPinned: app.isPinned(.cursor),
+                onTogglePin: { app.togglePin(.cursor) },
+                onRefresh: { Task { await app.refreshCursor() } })
+        } else if cardId == "grok", let grok = app.grokAccount {
+            GrokCardView(
+                account: grok,
+                isPinned: app.isPinned(.grok),
+                onTogglePin: { app.togglePin(.grok) },
+                onRefresh: { Task { await app.refreshGrok() } })
         } else if cardId == "antigravity", let ag = app.agAccount {
             CliQuotaCardView(
                 title: "Antigravity",

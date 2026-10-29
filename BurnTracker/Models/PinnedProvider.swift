@@ -18,6 +18,8 @@ enum PinnedProvider: Equatable {
     case claudeModelWeekly(accountId: String, model: String)
     case antigravity
     case commandCode
+    case cursor
+    case grok
 
     var token: String {
         switch self {
@@ -25,6 +27,8 @@ enum PinnedProvider: Equatable {
         case .claudeModelWeekly(let id, let model): return "claude-model:\(id):\(model)"
         case .antigravity:    return "antigravity"
         case .commandCode:    return "commandCode"
+        case .cursor:         return "cursor"
+        case .grok:           return "grok"
         }
     }
 
@@ -49,6 +53,8 @@ enum PinnedProvider: Equatable {
         switch token {
         case "antigravity": self = .antigravity
         case "commandCode": self = .commandCode
+        case "cursor":      self = .cursor
+        case "grok":        self = .grok
         default:            return nil
         }
     }

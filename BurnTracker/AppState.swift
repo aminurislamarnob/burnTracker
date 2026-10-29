@@ -17,6 +17,8 @@ final class AppState: ObservableObject {
     @Published var accounts: [Account] = []
     @Published var agAccount: CliAccount?
     @Published var commandCodeAccount: CommandCodeAccount?
+    @Published var cursorAccount: CursorAccount?
+    @Published var grokAccount: GrokAccount?
     @Published var globalStatus: GlobalStatus = .offline
     /// CLI-wide Claude Code usage trend (local logs), shared across Claude cards.
     @Published var claudeUsageTrend: ClaudeUsageTrend?
@@ -46,6 +48,7 @@ final class AppState: ObservableObject {
         launched = true
         NotificationManager.shared.requestAuthorization()
         loadFromDisk()
+        autoLinkLocalProvidersIfNeeded()
         setupFileWatchers()
         restartAutoRefreshTimer()
         if hasAnyAccount {
@@ -55,10 +58,10 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// True when at least one provider (Claude, Antigravity, or
-    /// Command Code) is linked.
+    /// True when at least one provider is linked.
     var hasAnyAccount: Bool {
         !accounts.isEmpty || agAccount != nil || commandCodeAccount != nil
+            || cursorAccount != nil || grokAccount != nil
     }
 
     /// Called each time the menu-bar popover appears (the `window-shown`
@@ -85,6 +88,12 @@ final class AppState: ObservableObject {
         if let cmd = settings.commandCodeAccount {
             commandCodeAccount = CommandCodeAccount(token: cmd.token, email: cmd.email, status: .offline)
         }
+        if let cursor = settings.cursorAccount {
+            cursorAccount = CursorAccount(token: cursor.token, email: cursor.email, status: .offline)
+        }
+        if let grok = settings.grokAccount {
+            grokAccount = GrokAccount(token: grok.token, email: grok.email, status: .offline)
+        }
         pinnedProvider = settings.pinnedProvider.flatMap(PinnedProvider.init(token:))
         refreshMinutes = settings.refreshMinutes
         alertThreshold = settings.alertThreshold
@@ -92,6 +101,21 @@ final class AppState: ObservableObject {
             cardOrder = order
         }
         prunePinIfDangling()
+    }
+
+    /// Links Cursor / Grok when local credentials exist but the settings file has no entry yet,
+    /// so usage appears without an extra manual "Sync" step after upgrading.
+    private func autoLinkLocalProvidersIfNeeded() {
+        var changed = false
+        if cursorAccount == nil, let creds = CursorService.login() {
+            cursorAccount = CursorAccount(token: creds.token, email: creds.email, status: .offline)
+            changed = true
+        }
+        if grokAccount == nil, let creds = GrokService.login() {
+            grokAccount = GrokAccount(token: creds.token, email: creds.email, status: .offline)
+            changed = true
+        }
+        if changed { saveToDisk() }
     }
 
     @discardableResult
@@ -104,6 +128,8 @@ final class AppState: ObservableObject {
         }
         let ag = agAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
         let cmd = commandCodeAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
+        let cursor = cursorAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
+        let grok = grokAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
         let cc = claudeCodeAccount.map {
             TrackerSettings.PersistedClaudeCode(token: "local-creds", email: $0.email, label: $0.label)
         }
@@ -111,6 +137,8 @@ final class AppState: ObservableObject {
                                        agAccount: ag,
                                        geminiAccount: retiredGeminiAccount,
                                        commandCodeAccount: cmd,
+                                       cursorAccount: cursor,
+                                       grokAccount: grok,
                                        claudeCodeAccount: cc,
                                        pinnedProvider: pinnedProvider?.token,
                                        refreshMinutes: refreshMinutes,
@@ -132,6 +160,8 @@ final class AppState: ObservableObject {
             active.append("claudeTrend")
         }
         if commandCodeAccount != nil { active.append("commandCode") }
+        if cursorAccount != nil { active.append("cursor") }
+        if grokAccount != nil { active.append("grok") }
         if agAccount != nil { active.append("antigravity") }
 
         var result = cardOrder.filter { active.contains($0) }
@@ -175,6 +205,8 @@ final class AppState: ObservableObject {
         for i in accounts.indices { accounts[i].status = .syncing }
         if agAccount != nil { agAccount?.status = .syncing }
         if commandCodeAccount != nil { commandCodeAccount?.status = .syncing }
+        if cursorAccount != nil { cursorAccount?.status = .syncing }
+        if grokAccount != nil { grokAccount?.status = .syncing }
         updateGlobalStatus()
 
         await withTaskGroup(of: Void.self) { group in
@@ -201,6 +233,16 @@ final class AppState: ObservableObject {
             if commandCodeAccount != nil {
                 group.addTask { [weak self] in
                     await self?.refreshCommandCode()
+                }
+            }
+            if cursorAccount != nil {
+                group.addTask { [weak self] in
+                    await self?.refreshCursor()
+                }
+            }
+            if grokAccount != nil {
+                group.addTask { [weak self] in
+                    await self?.refreshGrok()
                 }
             }
         }
@@ -413,6 +455,50 @@ final class AppState: ObservableObject {
         }
     }
 
+    func refreshCursor() async {
+        guard cursorAccount?.token.isEmpty == false else { return }
+        switch await CursorService.fetchQuota() {
+        case .success(let email, let quota):
+            if let email { cursorAccount?.email = email }
+            cursorAccount?.quota = quota
+            cursorAccount?.lastFetch = Date()
+            cursorAccount?.statusMessage = nil
+            cursorAccount?.status = .online
+            checkCursorUsageAlert()
+        case .notLoggedIn:
+            cursorAccount?.statusMessage = "Allow Keychain access for Cursor, then refresh."
+            cursorAccount?.status = .error
+        case .unauthorized:
+            cursorAccount?.statusMessage = "Cursor session expired. Sign in again in the Cursor app."
+            cursorAccount?.status = .error
+        case .failed:
+            cursorAccount?.statusMessage = "Could not read Cursor usage. Open Cursor, sign in, then refresh."
+            cursorAccount?.status = .error
+        }
+    }
+
+    func refreshGrok() async {
+        guard grokAccount?.token.isEmpty == false else { return }
+        switch await GrokService.fetchQuota() {
+        case .success(let email, let quota):
+            if let email { grokAccount?.email = email }
+            grokAccount?.quota = quota
+            grokAccount?.lastFetch = Date()
+            grokAccount?.statusMessage = nil
+            grokAccount?.status = .online
+            checkGrokUsageAlert()
+        case .notLoggedIn:
+            grokAccount?.statusMessage = "No Grok login found. Run `grok login`."
+            grokAccount?.status = .error
+        case .unauthorized:
+            grokAccount?.statusMessage = "Grok auth expired. Run `grok login` again."
+            grokAccount?.status = .error
+        case .failed:
+            grokAccount?.statusMessage = "Could not read Grok usage. Run `grok login`, then refresh."
+            grokAccount?.status = .error
+        }
+    }
+
     // MARK: - Notifications
 
     /// Edge-triggered: fires once when session usage first crosses the
@@ -518,6 +604,42 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func checkCursorUsageAlert() {
+        let threshold = alertThreshold
+        guard threshold > 0,
+              let acc = cursorAccount, acc.status == .online,
+              let usedPct = acc.quota?.primaryUsedPct else { return }
+
+        if usedPct >= threshold {
+            if cursorAccount?.alertedHighUsage == false {
+                cursorAccount?.alertedHighUsage = true
+                NotificationManager.shared.notify(
+                    title: "Cursor — \(usedPct)% of plan used",
+                    body: "Your Cursor plan usage has crossed \(threshold)%.")
+            }
+        } else {
+            cursorAccount?.alertedHighUsage = false
+        }
+    }
+
+    private func checkGrokUsageAlert() {
+        let threshold = alertThreshold
+        guard threshold > 0,
+              let acc = grokAccount, acc.status == .online,
+              let usedPct = acc.quota?.weeklyUsedPct else { return }
+
+        if usedPct >= threshold {
+            if grokAccount?.alertedHighUsage == false {
+                grokAccount?.alertedHighUsage = true
+                NotificationManager.shared.notify(
+                    title: "Grok — \(usedPct)% of weekly pool used",
+                    body: "Your Grok weekly quota has crossed \(threshold)% usage.")
+            }
+        } else {
+            grokAccount?.alertedHighUsage = false
+        }
+    }
+
     // MARK: - Menu-bar pin
 
     /// Pins a provider to the menu bar, or unpins it when it is already pinned.
@@ -546,6 +668,8 @@ final class AppState: ObservableObject {
             stillExists = accounts.contains { $0.id == id }
         case .antigravity:    stillExists = agAccount != nil
         case .commandCode:    stillExists = commandCodeAccount != nil
+        case .cursor:         stillExists = cursorAccount != nil
+        case .grok:           stillExists = grokAccount != nil
         }
         if !stillExists { pinnedProvider = nil }
     }
@@ -576,6 +700,12 @@ final class AppState: ObservableObject {
             // which is the only usage signal they expose.
             let pct = quota.fiveHour?.usedPct ?? quota.creditsUsedPct
             return PinnedSummary(label: "Command Code", percent: pct)
+        case .cursor:
+            guard let pct = cursorAccount?.quota?.primaryUsedPct else { return nil }
+            return PinnedSummary(label: "Cursor", percent: pct)
+        case .grok:
+            guard let pct = grokAccount?.quota?.weeklyUsedPct else { return nil }
+            return PinnedSummary(label: "Grok", percent: pct)
         }
     }
 
@@ -592,6 +722,12 @@ final class AppState: ObservableObject {
         }
         if let cmd = commandCodeAccount {
             if cmd.status == .online { anySuccess = true } else { allSuccess = false }
+        }
+        if let cursor = cursorAccount {
+            if cursor.status == .online { anySuccess = true } else { allSuccess = false }
+        }
+        if let grok = grokAccount {
+            if grok.status == .online { anySuccess = true } else { allSuccess = false }
         }
         if allSuccess {
             globalStatus = .online
@@ -679,6 +815,46 @@ final class AppState: ObservableObject {
         aggregateGlobalStatus()
     }
 
+    // MARK: - Cursor linking
+
+    func linkCursor() async -> String? {
+        guard let creds = CursorService.login() else {
+            return "Cursor isn’t installed (no state database). Open the Cursor app and sign in first."
+        }
+        cursorAccount = CursorAccount(token: creds.token, email: creds.email, status: .syncing)
+        saveToDisk()
+        await refreshCursor()
+        aggregateGlobalStatus()
+        return nil
+    }
+
+    func unlinkCursor() {
+        cursorAccount = nil
+        prunePinIfDangling()
+        saveToDisk()
+        aggregateGlobalStatus()
+    }
+
+    // MARK: - Grok linking
+
+    func linkGrok() async -> String? {
+        guard let creds = GrokService.login() else {
+            return "No Grok CLI home found. Install the Grok CLI and run `grok login`."
+        }
+        grokAccount = GrokAccount(token: creds.token, email: creds.email, status: .syncing)
+        saveToDisk()
+        await refreshGrok()
+        aggregateGlobalStatus()
+        return nil
+    }
+
+    func unlinkGrok() {
+        grokAccount = nil
+        prunePinIfDangling()
+        saveToDisk()
+        aggregateGlobalStatus()
+    }
+
     // MARK: - Settings
 
     func setRefreshMinutes(_ minutes: Int) {
@@ -697,6 +873,8 @@ final class AppState: ObservableObject {
         }
         agAccount?.alertedHighUsage = false
         commandCodeAccount?.alertedHighUsage = false
+        cursorAccount?.alertedHighUsage = false
+        grokAccount?.alertedHighUsage = false
         saveToDisk()
         for i in accounts.indices where accounts[i].status == .online {
             checkSessionUsageAlert(index: i)
@@ -704,6 +882,8 @@ final class AppState: ObservableObject {
         }
         checkCliUsageAlert(\.agAccount, providerName: "Antigravity")
         checkCommandCodeUsageAlert()
+        checkCursorUsageAlert()
+        checkGrokUsageAlert()
     }
 
     // MARK: - Session automation
