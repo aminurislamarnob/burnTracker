@@ -10,6 +10,7 @@ struct SettingsView: View {
             commandCodeCard
             cursorCard
             grokCard
+            copilotCard
             antigravityCard
             generalCard
         }
@@ -38,7 +39,7 @@ struct SettingsView: View {
 
             SettingsSectionTitle("Notifications")
             LabeledField("Alert when usage reaches",
-                         help: "Sends a macOS notification the first time a linked provider crosses this level. Each provider uses its primary meter (Claude 5-hour, Antigravity 5-hour remaining, Command Code 5-hour when present, Cursor plan usage, Grok weekly pool).") {
+                         help: "Sends a macOS notification the first time a linked provider crosses this level. Each provider uses its primary meter (Claude 5-hour, Antigravity 5-hour remaining, Command Code 5-hour when present, Cursor plan usage, Grok weekly pool, Copilot credits).") {
                 Picker("", selection: Binding(
                     get: { app.alertThreshold },
                     set: { app.setAlertThreshold($0) })) {
@@ -217,6 +218,29 @@ struct SettingsView: View {
                 linkTitle: "Sync with Grok",
                 link: { await app.linkGrok() },
                 unlink: { app.unlinkGrok() })
+        }
+    }
+
+    // MARK: - Copilot card
+
+    private var copilotCard: some View {
+        Card {
+            SettingsSectionTitle("GitHub Copilot Account")
+            Text("Link your Copilot CLI login (or GitHub CLI) to track monthly AI Credits and free-tier chat/completions quotas.")
+                .font(.system(size: 12))
+                .foregroundColor(Theme.textMuted)
+                .padding(.bottom, 12)
+
+            Text(app.copilotAccount != nil ? "Linked (\(app.copilotAccount?.email ?? ""))" : "Not linked.")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Theme.textMain)
+                .padding(.bottom, 12)
+
+            CliLinkControls(
+                isLinked: app.copilotAccount != nil,
+                linkTitle: "Sync with Copilot",
+                link: { await app.linkCopilot() },
+                unlink: { app.unlinkCopilot() })
         }
     }
 

@@ -19,6 +19,7 @@ final class AppState: ObservableObject {
     @Published var commandCodeAccount: CommandCodeAccount?
     @Published var cursorAccount: CursorAccount?
     @Published var grokAccount: GrokAccount?
+    @Published var copilotAccount: CopilotAccount?
     @Published var globalStatus: GlobalStatus = .offline
     /// CLI-wide Claude Code usage trend (local logs), shared across Claude cards.
     @Published var claudeUsageTrend: ClaudeUsageTrend?
@@ -61,7 +62,7 @@ final class AppState: ObservableObject {
     /// True when at least one provider is linked.
     var hasAnyAccount: Bool {
         !accounts.isEmpty || agAccount != nil || commandCodeAccount != nil
-            || cursorAccount != nil || grokAccount != nil
+            || cursorAccount != nil || grokAccount != nil || copilotAccount != nil
     }
 
     /// Called each time the menu-bar popover appears (the `window-shown`
@@ -94,6 +95,9 @@ final class AppState: ObservableObject {
         if let grok = settings.grokAccount {
             grokAccount = GrokAccount(token: grok.token, email: grok.email, status: .offline)
         }
+        if let copilot = settings.copilotAccount {
+            copilotAccount = CopilotAccount(token: copilot.token, email: copilot.email, status: .offline)
+        }
         pinnedProvider = settings.pinnedProvider.flatMap(PinnedProvider.init(token:))
         refreshMinutes = settings.refreshMinutes
         alertThreshold = settings.alertThreshold
@@ -103,8 +107,8 @@ final class AppState: ObservableObject {
         prunePinIfDangling()
     }
 
-    /// Links Cursor / Grok when local credentials exist but the settings file has no entry yet,
-    /// so usage appears without an extra manual "Sync" step after upgrading.
+    /// Links Cursor / Grok / Copilot when local credentials exist but the settings file has no
+    /// entry yet, so usage appears without an extra manual "Sync" step after upgrading.
     private func autoLinkLocalProvidersIfNeeded() {
         var changed = false
         if cursorAccount == nil, let creds = CursorService.login() {
@@ -113,6 +117,10 @@ final class AppState: ObservableObject {
         }
         if grokAccount == nil, let creds = GrokService.login() {
             grokAccount = GrokAccount(token: creds.token, email: creds.email, status: .offline)
+            changed = true
+        }
+        if copilotAccount == nil, let creds = CopilotService.login() {
+            copilotAccount = CopilotAccount(token: creds.token, email: creds.email, status: .offline)
             changed = true
         }
         if changed { saveToDisk() }
@@ -130,6 +138,7 @@ final class AppState: ObservableObject {
         let cmd = commandCodeAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
         let cursor = cursorAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
         let grok = grokAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
+        let copilot = copilotAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
         let cc = claudeCodeAccount.map {
             TrackerSettings.PersistedClaudeCode(token: "local-creds", email: $0.email, label: $0.label)
         }
@@ -139,6 +148,7 @@ final class AppState: ObservableObject {
                                        commandCodeAccount: cmd,
                                        cursorAccount: cursor,
                                        grokAccount: grok,
+                                       copilotAccount: copilot,
                                        claudeCodeAccount: cc,
                                        pinnedProvider: pinnedProvider?.token,
                                        refreshMinutes: refreshMinutes,
@@ -162,6 +172,7 @@ final class AppState: ObservableObject {
         if commandCodeAccount != nil { active.append("commandCode") }
         if cursorAccount != nil { active.append("cursor") }
         if grokAccount != nil { active.append("grok") }
+        if copilotAccount != nil { active.append("copilot") }
         if agAccount != nil { active.append("antigravity") }
 
         var result = cardOrder.filter { active.contains($0) }
@@ -207,6 +218,7 @@ final class AppState: ObservableObject {
         if commandCodeAccount != nil { commandCodeAccount?.status = .syncing }
         if cursorAccount != nil { cursorAccount?.status = .syncing }
         if grokAccount != nil { grokAccount?.status = .syncing }
+        if copilotAccount != nil { copilotAccount?.status = .syncing }
         updateGlobalStatus()
 
         await withTaskGroup(of: Void.self) { group in
@@ -243,6 +255,11 @@ final class AppState: ObservableObject {
             if grokAccount != nil {
                 group.addTask { [weak self] in
                     await self?.refreshGrok()
+                }
+            }
+            if copilotAccount != nil {
+                group.addTask { [weak self] in
+                    await self?.refreshCopilot()
                 }
             }
         }
@@ -499,6 +516,28 @@ final class AppState: ObservableObject {
         }
     }
 
+    func refreshCopilot() async {
+        guard copilotAccount?.token.isEmpty == false else { return }
+        switch await CopilotService.fetchQuota() {
+        case .success(let email, let quota):
+            if let email { copilotAccount?.email = email }
+            copilotAccount?.quota = quota
+            copilotAccount?.lastFetch = Date()
+            copilotAccount?.statusMessage = nil
+            copilotAccount?.status = .online
+            checkCopilotUsageAlert()
+        case .notLoggedIn:
+            copilotAccount?.statusMessage = "Allow Keychain access for Copilot, or run `copilot login`."
+            copilotAccount?.status = .error
+        case .unauthorized:
+            copilotAccount?.statusMessage = "Copilot auth expired. Run `copilot login` again."
+            copilotAccount?.status = .error
+        case .failed:
+            copilotAccount?.statusMessage = "Could not read Copilot usage. Run `copilot login`, then refresh."
+            copilotAccount?.status = .error
+        }
+    }
+
     // MARK: - Notifications
 
     /// Edge-triggered: fires once when session usage first crosses the
@@ -640,6 +679,24 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func checkCopilotUsageAlert() {
+        let threshold = alertThreshold
+        guard threshold > 0,
+              let acc = copilotAccount, acc.status == .online,
+              let usedPct = acc.quota?.primaryUsedPct else { return }
+
+        if usedPct >= threshold {
+            if copilotAccount?.alertedHighUsage == false {
+                copilotAccount?.alertedHighUsage = true
+                NotificationManager.shared.notify(
+                    title: "Copilot — \(usedPct)% of credits used",
+                    body: "Your GitHub Copilot credits have crossed \(threshold)% usage.")
+            }
+        } else {
+            copilotAccount?.alertedHighUsage = false
+        }
+    }
+
     // MARK: - Menu-bar pin
 
     /// Pins a provider to the menu bar, or unpins it when it is already pinned.
@@ -670,6 +727,7 @@ final class AppState: ObservableObject {
         case .commandCode:    stillExists = commandCodeAccount != nil
         case .cursor:         stillExists = cursorAccount != nil
         case .grok:           stillExists = grokAccount != nil
+        case .copilot:        stillExists = copilotAccount != nil
         }
         if !stillExists { pinnedProvider = nil }
     }
@@ -706,6 +764,9 @@ final class AppState: ObservableObject {
         case .grok:
             guard let pct = grokAccount?.quota?.weeklyUsedPct else { return nil }
             return PinnedSummary(label: "Grok", percent: pct)
+        case .copilot:
+            guard let pct = copilotAccount?.quota?.primaryUsedPct else { return nil }
+            return PinnedSummary(label: "Copilot", percent: pct)
         }
     }
 
@@ -728,6 +789,9 @@ final class AppState: ObservableObject {
         }
         if let grok = grokAccount {
             if grok.status == .online { anySuccess = true } else { allSuccess = false }
+        }
+        if let copilot = copilotAccount {
+            if copilot.status == .online { anySuccess = true } else { allSuccess = false }
         }
         if allSuccess {
             globalStatus = .online
@@ -855,6 +919,26 @@ final class AppState: ObservableObject {
         aggregateGlobalStatus()
     }
 
+    // MARK: - Copilot linking
+
+    func linkCopilot() async -> String? {
+        guard let creds = CopilotService.login() else {
+            return "No Copilot login found. Run `copilot login` (or `gh auth login`) first."
+        }
+        copilotAccount = CopilotAccount(token: creds.token, email: creds.email, status: .syncing)
+        saveToDisk()
+        await refreshCopilot()
+        aggregateGlobalStatus()
+        return nil
+    }
+
+    func unlinkCopilot() {
+        copilotAccount = nil
+        prunePinIfDangling()
+        saveToDisk()
+        aggregateGlobalStatus()
+    }
+
     // MARK: - Settings
 
     func setRefreshMinutes(_ minutes: Int) {
@@ -875,6 +959,7 @@ final class AppState: ObservableObject {
         commandCodeAccount?.alertedHighUsage = false
         cursorAccount?.alertedHighUsage = false
         grokAccount?.alertedHighUsage = false
+        copilotAccount?.alertedHighUsage = false
         saveToDisk()
         for i in accounts.indices where accounts[i].status == .online {
             checkSessionUsageAlert(index: i)
@@ -884,6 +969,7 @@ final class AppState: ObservableObject {
         checkCommandCodeUsageAlert()
         checkCursorUsageAlert()
         checkGrokUsageAlert()
+        checkCopilotUsageAlert()
     }
 
     // MARK: - Session automation

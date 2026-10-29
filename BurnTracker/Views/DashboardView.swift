@@ -206,6 +206,12 @@ struct DashboardView: View {
                 isPinned: app.isPinned(.grok),
                 onTogglePin: { app.togglePin(.grok) },
                 onRefresh: { Task { await app.refreshGrok() } })
+        } else if cardId == "copilot", let copilot = app.copilotAccount {
+            CopilotCardView(
+                account: copilot,
+                isPinned: app.isPinned(.copilot),
+                onTogglePin: { app.togglePin(.copilot) },
+                onRefresh: { Task { await app.refreshCopilot() } })
         } else if cardId == "antigravity", let ag = app.agAccount {
             CliQuotaCardView(
                 title: "Antigravity",

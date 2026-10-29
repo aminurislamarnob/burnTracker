@@ -29,6 +29,7 @@ enum Theme {
     static let commandCodeTint = Color(hex: 0x556AF3)  // Command Code — brand indigo
     static let cursorTint = Color(hex: 0xECECEC)       // Cursor — light mark on dark cards
     static let grokTint = Color(hex: 0xF3F3F6)         // Grok — neutral light
+    static let copilotTint = Color(hex: 0x9BE9A8)      // Copilot — soft mint (GitHub-ish)
 
     /// Purchased-credit ("extra usage") bar — amber/gold to read as spend.
     static let creditTint = Color(hex: 0xE0A63C)
