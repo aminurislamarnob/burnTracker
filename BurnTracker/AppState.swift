@@ -446,14 +446,12 @@ final class AppState: ObservableObject {
             agAccount?.statusMessage = "Antigravity isn't running. Open the app, then refresh."
             agAccount?.status = .error
         case .unauthorized:
-            // A server answered but rejected us. Two distinct causes share this
-            // state: the IDE is open and its CSRF scheme changed, or only the
-            // `agy` CLI is running and refuses token-less calls. The wording has
-            // to fit both, since the CLI-only case is the common one.
-            agAccount?.statusMessage = "Antigravity refused the request. Open or restart the app, then refresh."
+            // Local HTTPS answered but rejected CSRF, and the `agy -p=/usage`
+            // fallback also failed — typically an unsigned-in or stale CLI.
+            agAccount?.statusMessage = "Couldn’t read Antigravity quota. Run `agy` and sign in, then refresh."
             agAccount?.status = .error
         case .failed:
-            agAccount?.statusMessage = nil
+            agAccount?.statusMessage = "Couldn’t read Antigravity quota. Update `agy` or open the Antigravity app, then refresh."
             agAccount?.status = .error
         }
     }

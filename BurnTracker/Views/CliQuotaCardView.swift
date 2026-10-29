@@ -2,8 +2,8 @@ import SwiftUI
 
 /// A compact quota card for a linked CLI provider (Antigravity),
 /// styled after the CodexBar menu: a flat header (name + email, then an
-/// "Updated …" line) followed by thin brand-tinted bars showing *remaining*
-/// quota with "% left" and a reset countdown.
+/// "Updated …" line) followed by thin brand-tinted bars showing *used*
+/// quota with "% used" and a reset countdown.
 struct CliQuotaCardView: View {
     let title: String
     let subtitle: String
@@ -64,7 +64,7 @@ struct CliQuotaCardView: View {
                         title: row.label,
                         percent: row.percent,
                         tint: barTint(row.percent),
-                        leftText: "\(row.percent)% left",
+                        leftText: "\(row.percent)% used",
                         rightText: "Resets \(TimeFormat.compactReset(row.resetsIn))")
                 }
             }
@@ -79,26 +79,31 @@ struct CliQuotaCardView: View {
             .padding(.vertical, 6)
     }
 
-    /// Brand tint while healthy; warns as *remaining* quota runs low.
-    private func barTint(_ percent: Int) -> Color {
-        if percent <= 20 { return Theme.error }
-        if percent <= 50 { return Theme.warning }
+    /// Brand tint while healthy; warns as *used* quota climbs.
+    private func barTint(_ usedPct: Int) -> Color {
+        if usedPct >= 90 { return Theme.error }
+        if usedPct >= 75 { return Theme.warning }
         return tint
     }
 
     /// Flattened metric rows, in the screenshot order: 5-hour then weekly, per
-    /// model family (Gemini first, then Claude/GPT).
+    /// model family (Gemini first, then Claude/GPT). Stored group percents are
+    /// *remaining*; convert to used for the bars.
     private var rows: [MetricRowData] {
         var out: [MetricRowData] = []
         if let g = account.gemini {
-            out.append(MetricRowData(label: "Gemini 5-hour", percent: g.fiveHourPct, resetsIn: g.fiveHourResetsIn))
-            out.append(MetricRowData(label: "Gemini weekly", percent: g.weeklyPct, resetsIn: g.weeklyResetsIn))
+            out.append(MetricRowData(label: "Gemini 5-hour", percent: usedPct(g.fiveHourPct), resetsIn: g.fiveHourResetsIn))
+            out.append(MetricRowData(label: "Gemini weekly", percent: usedPct(g.weeklyPct), resetsIn: g.weeklyResetsIn))
         }
         if let c = account.claudeGpt {
-            out.append(MetricRowData(label: "Claude/GPT 5-hour", percent: c.fiveHourPct, resetsIn: c.fiveHourResetsIn))
-            out.append(MetricRowData(label: "Claude/GPT weekly", percent: c.weeklyPct, resetsIn: c.weeklyResetsIn))
+            out.append(MetricRowData(label: "Claude/GPT 5-hour", percent: usedPct(c.fiveHourPct), resetsIn: c.fiveHourResetsIn))
+            out.append(MetricRowData(label: "Claude/GPT weekly", percent: usedPct(c.weeklyPct), resetsIn: c.weeklyResetsIn))
         }
         return out
+    }
+
+    private func usedPct(_ remainingPct: Int) -> Int {
+        min(100, max(0, 100 - remainingPct))
     }
 }
 

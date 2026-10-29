@@ -39,7 +39,7 @@ struct SettingsView: View {
 
             SettingsSectionTitle("Notifications")
             LabeledField("Alert when usage reaches",
-                         help: "Sends a macOS notification the first time a linked provider crosses this level. Each provider uses its primary meter (Claude 5-hour, Antigravity 5-hour remaining, Command Code 5-hour when present, Cursor plan usage, Grok weekly pool, Copilot credits).") {
+                         help: "Sends a macOS notification the first time a linked provider crosses this level. Each provider uses its primary meter (Claude 5-hour, Antigravity 5-hour used, Command Code 5-hour when present, Cursor plan usage, Grok weekly pool, Copilot credits).") {
                 Picker("", selection: Binding(
                     get: { app.alertThreshold },
                     set: { app.setAlertThreshold($0) })) {

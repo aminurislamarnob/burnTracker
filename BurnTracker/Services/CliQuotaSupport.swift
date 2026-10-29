@@ -36,29 +36,64 @@ enum CliQuotaSupport {
         return nil
     }
 
-    // MARK: - Bucket parsing (local language server response)
+    // MARK: - Bucket parsing (local language server + `agy -p=/usage`)
 
-    /// Parses a `groups[]` entry from the RetrieveUserQuotaSummary response.
+    /// Parses a `groups[]` entry from `RetrieveUserQuotaSummary` or the CLI
+    /// `/usage` envelope. Accepts both camelCase (language server) and
+    /// snake_case (`agy` print JSON); skips `disabled` buckets (unmetered /
+    /// not-applicable windows that would otherwise read as 100% remaining).
     static func parseBucketGroup(_ group: [String: Any]?) -> AGGroup? {
-        guard let group, let buckets = group["buckets"] as? [[String: Any]], !buckets.isEmpty else { return nil }
+        guard let group else { return nil }
+        let rawBuckets = group["buckets"] as? [[String: Any]] ?? []
+        let buckets = rawBuckets.filter { boolValue($0["disabled"]) != true }
+        guard !buckets.isEmpty else { return nil }
 
         let weekly = buckets.first {
-            ($0["window"] as? String) == "weekly" || (($0["bucketId"] as? String)?.contains("weekly") == true)
+            window(of: $0) == "weekly" || bucketID(of: $0).contains("weekly")
         } ?? buckets.first!
 
+        // When the 5-hour window is disabled (common once weekly is exhausted),
+        // mirror the weekly remaining so the card never invents headroom.
         let fiveHour = buckets.first {
-            ($0["window"] as? String) == "5h" || (($0["bucketId"] as? String)?.contains("5h") == true)
-        } ?? buckets.last!
+            window(of: $0) == "5h" || bucketID(of: $0).contains("5h")
+        } ?? weekly
+
+        let weeklyRemaining = remainingFraction(of: weekly)
+        let fiveRemaining = remainingFraction(of: fiveHour)
 
         return AGGroup(
-            name: group["displayName"] as? String ?? "Models",
+            name: (group["displayName"] as? String)
+                ?? (group["name"] as? String)
+                ?? "Models",
             description: group["description"] as? String,
-            weeklyPct: pct(weekly["remainingFraction"]),
-            weeklyRawPct: rawPct(weekly["remainingFraction"]),
-            weeklyResetsIn: weekly["resetTime"] as? String,
-            fiveHourPct: pct(fiveHour["remainingFraction"]),
-            fiveHourRawPct: rawPct(fiveHour["remainingFraction"]),
-            fiveHourResetsIn: fiveHour["resetTime"] as? String)
+            weeklyPct: pct(weeklyRemaining),
+            weeklyRawPct: rawPct(weeklyRemaining),
+            weeklyResetsIn: resetTime(of: weekly),
+            fiveHourPct: pct(fiveRemaining),
+            fiveHourRawPct: rawPct(fiveRemaining),
+            fiveHourResetsIn: resetTime(of: fiveHour))
+    }
+
+    private static func window(of bucket: [String: Any]) -> String {
+        ((bucket["window"] as? String) ?? "").lowercased()
+    }
+
+    private static func bucketID(of bucket: [String: Any]) -> String {
+        ((bucket["bucketId"] as? String) ?? (bucket["id"] as? String) ?? "").lowercased()
+    }
+
+    private static func remainingFraction(of bucket: [String: Any]) -> Any? {
+        bucket["remainingFraction"] ?? bucket["remaining_fraction"]
+    }
+
+    private static func resetTime(of bucket: [String: Any]) -> String? {
+        (bucket["resetTime"] as? String) ?? (bucket["reset_time"] as? String)
+    }
+
+    private static func boolValue(_ value: Any?) -> Bool? {
+        if let b = value as? Bool { return b }
+        if let n = asDouble(value) { return n != 0 }
+        return nil
     }
 
     // MARK: - JSON / JWT helpers

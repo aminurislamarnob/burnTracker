@@ -49,47 +49,37 @@ struct CursorCardView: View {
         } else if account.status == .syncing && account.quota == nil {
             stateText("Syncing Cursor usage…", color: Theme.textDimmed)
         } else if let quota = account.quota, quota.hasAnyMetric {
+            // Same field → label mapping as Orca: auto → Cursor Models, api → Other Models,
+            // total → Plan. Numbers come from GetCurrentPeriodUsage.planUsage.
             VStack(alignment: .leading, spacing: 18) {
+                if let auto = quota.autoUsedPct {
+                    usedRow(title: "Cursor Models", percent: auto, reset: quota.billingCycleEnd,
+                            tint: Theme.cursorTint)
+                }
+                if let api = quota.apiUsedPct {
+                    usedRow(title: "Other Models", percent: api, reset: quota.billingCycleEnd,
+                            tint: Theme.info)
+                }
                 if let pct = quota.totalUsedPct {
-                    CompactQuotaRow(
-                        title: "Total Usage",
-                        percent: pct,
-                        tint: usedTint(pct, base: Theme.cursorTint),
-                        leftText: "Billing cycle",
-                        rightText: resetText(quota.billingCycleEnd))
+                    usedRow(title: "Plan", percent: pct, reset: quota.billingCycleEnd,
+                            tint: Theme.cursorTint)
                 } else if let used = quota.requestsUsed, let limit = quota.requestsLimit, limit > 0 {
                     let pct = Int(min(100, Double(used) / Double(limit) * 100).rounded())
                     CompactQuotaRow(
                         title: "Requests",
                         percent: pct,
                         tint: usedTint(pct, base: Theme.cursorTint),
-                        leftText: "\(used) of \(limit) requests",
-                        rightText: "—")
-                }
-                if let auto = quota.autoUsedPct {
-                    CompactQuotaRow(
-                        title: "Auto Usage",
-                        percent: auto,
-                        tint: usedTint(auto, base: Theme.info),
-                        leftText: "Auto model pool",
-                        rightText: resetText(quota.billingCycleEnd))
-                }
-                if let api = quota.apiUsedPct {
-                    CompactQuotaRow(
-                        title: "API Usage",
-                        percent: api,
-                        tint: usedTint(api, base: Theme.warning),
-                        leftText: "API pool",
-                        rightText: resetText(quota.billingCycleEnd))
+                        leftText: "\(pct)% used",
+                        rightText: "\(used) of \(limit)")
                 }
                 if let limit = quota.onDemandLimitUSD, limit > 0, let spent = quota.onDemandSpentUSD {
                     let pct = Int(min(100, spent / limit * 100).rounded())
                     CompactQuotaRow(
-                        title: "Extra Usage",
+                        title: "On-demand",
                         percent: pct,
                         tint: usedTint(pct, base: Theme.creditTint),
-                        leftText: "\(NumberFormat.dollars(limit - spent)) left of \(NumberFormat.dollars(limit))",
-                        rightText: "On-demand")
+                        leftText: "\(pct)% used",
+                        rightText: "\(NumberFormat.dollars(spent)) of \(NumberFormat.dollars(limit))")
                 }
                 if let credits = quota.creditsRemainingUSD, credits > 0 {
                     Text("Credits: \(NumberFormat.dollars(credits)) remaining")
@@ -100,6 +90,15 @@ struct CursorCardView: View {
         } else {
             stateText("No Cursor usage data yet.", color: Theme.textDimmed)
         }
+    }
+
+    private func usedRow(title: String, percent: Int, reset: Date?, tint: Color) -> CompactQuotaRow {
+        CompactQuotaRow(
+            title: title,
+            percent: percent,
+            tint: usedTint(percent, base: tint),
+            leftText: "\(percent)% used",
+            rightText: "Resets \(resetText(reset))")
     }
 
     private func stateText(_ text: String, color: Color) -> some View {
