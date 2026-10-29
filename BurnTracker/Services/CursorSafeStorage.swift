@@ -83,33 +83,11 @@ enum CursorSafeStorage {
         return key
     }
 
-    /// The safe-storage password. Read with `security` so a menu-bar app can use
-    /// the item Cursor already created, without a second generic-password prompt.
+    /// The safe-storage password. SecItem Fail-first, then at most one sheet —
+    /// shared cache means timer refreshes never re-ask.
     private static func safeStoragePassword() -> String? {
-        let result = runSecurity([
-            "find-generic-password", "-s", "Cursor Safe Storage", "-a", "Cursor Key", "-w"
-        ])
-        guard result.status == 0,
-              let text = String(data: result.output, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-              !text.isEmpty else { return nil }
-        return text
-    }
-
-    private static func runSecurity(_ arguments: [String]) -> (status: Int32, output: Data) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = arguments
-        let stdout = Pipe()
-        process.standardOutput = stdout
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return (-1, Data())
-        }
-        let output = stdout.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return (process.terminationStatus, output)
+        KeychainAccess.readGenericPassword(
+            service: "Cursor Safe Storage",
+            accounts: ["Cursor Key"])
     }
 }

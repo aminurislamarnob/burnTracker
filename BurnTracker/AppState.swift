@@ -19,6 +19,7 @@ final class AppState: ObservableObject {
     @Published var commandCodeAccount: CommandCodeAccount?
     @Published var cursorAccount: CursorAccount?
     @Published var grokAccount: GrokAccount?
+    @Published var copilotAccount: CopilotAccount?
     @Published var globalStatus: GlobalStatus = .offline
     /// CLI-wide Claude Code usage trend (local logs), shared across Claude cards.
     @Published var claudeUsageTrend: ClaudeUsageTrend?
@@ -38,6 +39,9 @@ final class AppState: ObservableObject {
     private var fileWatchers: [FileWatcher] = []
     private var watchDebounce: DispatchWorkItem?
     private var launched = false
+    /// Collapses overlapping refreshAll (launch + popover + timer) so Keychain
+    /// work never runs twice in parallel.
+    private var refreshAllInFlight: Task<Void, Never>?
 
     // MARK: - Lifecycle
 
@@ -61,7 +65,7 @@ final class AppState: ObservableObject {
     /// True when at least one provider is linked.
     var hasAnyAccount: Bool {
         !accounts.isEmpty || agAccount != nil || commandCodeAccount != nil
-            || cursorAccount != nil || grokAccount != nil
+            || cursorAccount != nil || grokAccount != nil || copilotAccount != nil
     }
 
     /// Called each time the menu-bar popover appears (the `window-shown`
@@ -94,6 +98,9 @@ final class AppState: ObservableObject {
         if let grok = settings.grokAccount {
             grokAccount = GrokAccount(token: grok.token, email: grok.email, status: .offline)
         }
+        if let copilot = settings.copilotAccount {
+            copilotAccount = CopilotAccount(token: copilot.token, email: copilot.email, status: .offline)
+        }
         pinnedProvider = settings.pinnedProvider.flatMap(PinnedProvider.init(token:))
         refreshMinutes = settings.refreshMinutes
         alertThreshold = settings.alertThreshold
@@ -103,8 +110,8 @@ final class AppState: ObservableObject {
         prunePinIfDangling()
     }
 
-    /// Links Cursor / Grok when local credentials exist but the settings file has no entry yet,
-    /// so usage appears without an extra manual "Sync" step after upgrading.
+    /// Links Cursor / Grok / Copilot when local credentials exist but the settings file has no
+    /// entry yet, so usage appears without an extra manual "Sync" step after upgrading.
     private func autoLinkLocalProvidersIfNeeded() {
         var changed = false
         if cursorAccount == nil, let creds = CursorService.login() {
@@ -113,6 +120,10 @@ final class AppState: ObservableObject {
         }
         if grokAccount == nil, let creds = GrokService.login() {
             grokAccount = GrokAccount(token: creds.token, email: creds.email, status: .offline)
+            changed = true
+        }
+        if copilotAccount == nil, let creds = CopilotService.login() {
+            copilotAccount = CopilotAccount(token: creds.token, email: creds.email, status: .offline)
             changed = true
         }
         if changed { saveToDisk() }
@@ -130,6 +141,7 @@ final class AppState: ObservableObject {
         let cmd = commandCodeAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
         let cursor = cursorAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
         let grok = grokAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
+        let copilot = copilotAccount.map { TrackerSettings.PersistedAg(token: $0.token, email: $0.email) }
         let cc = claudeCodeAccount.map {
             TrackerSettings.PersistedClaudeCode(token: "local-creds", email: $0.email, label: $0.label)
         }
@@ -139,6 +151,7 @@ final class AppState: ObservableObject {
                                        commandCodeAccount: cmd,
                                        cursorAccount: cursor,
                                        grokAccount: grok,
+                                       copilotAccount: copilot,
                                        claudeCodeAccount: cc,
                                        pinnedProvider: pinnedProvider?.token,
                                        refreshMinutes: refreshMinutes,
@@ -162,6 +175,7 @@ final class AppState: ObservableObject {
         if commandCodeAccount != nil { active.append("commandCode") }
         if cursorAccount != nil { active.append("cursor") }
         if grokAccount != nil { active.append("grok") }
+        if copilotAccount != nil { active.append("copilot") }
         if agAccount != nil { active.append("antigravity") }
 
         var result = cardOrder.filter { active.contains($0) }
@@ -197,6 +211,19 @@ final class AppState: ObservableObject {
     /// Re-syncs everything. Invoked by the popover opening, the background
     /// timer, and the file watchers.
     func refreshAll() async {
+        if let refreshAllInFlight {
+            await refreshAllInFlight.value
+            return
+        }
+        let task = Task { @MainActor in
+            await self.performRefreshAll()
+        }
+        refreshAllInFlight = task
+        await task.value
+        refreshAllInFlight = nil
+    }
+
+    private func performRefreshAll() async {
         guard hasAnyAccount else { return }
 
         restartAutoRefreshTimer()
@@ -207,16 +234,24 @@ final class AppState: ObservableObject {
         if commandCodeAccount != nil { commandCodeAccount?.status = .syncing }
         if cursorAccount != nil { cursorAccount?.status = .syncing }
         if grokAccount != nil { grokAccount?.status = .syncing }
+        if copilotAccount != nil { copilotAccount?.status = .syncing }
         updateGlobalStatus()
 
+        // Keychain-backed providers run serially. Cursor may show the one allowed
+        // password sheet (Safe Storage). Copilot / Claude Code stay silent on
+        // auto-refresh — tap Refresh on that card to allow a sheet.
+        if cursorAccount != nil {
+            await refreshCursor(allowKeychainPrompt: false)
+        }
+        if copilotAccount != nil {
+            await refreshCopilot(allowKeychainPrompt: false)
+        }
+        if accounts.contains(where: \.isClaudeCode) {
+            await refreshClaudeCode(allowKeychainPrompt: false)
+        }
+
         await withTaskGroup(of: Void.self) { group in
-            for account in accounts {
-                if account.isClaudeCode {
-                    group.addTask { [weak self] in
-                        await self?.refreshClaudeCode()
-                    }
-                    continue
-                }
+            for account in accounts where !account.isClaudeCode {
                 let id = account.id
                 let key = account.sessionKey
                 group.addTask { [weak self] in
@@ -233,11 +268,6 @@ final class AppState: ObservableObject {
             if commandCodeAccount != nil {
                 group.addTask { [weak self] in
                     await self?.refreshCommandCode()
-                }
-            }
-            if cursorAccount != nil {
-                group.addTask { [weak self] in
-                    await self?.refreshCursor()
                 }
             }
             if grokAccount != nil {
@@ -284,7 +314,7 @@ final class AppState: ObservableObject {
         guard let idx = accounts.firstIndex(where: { $0.id == id }) else { return }
         accounts[idx].status = .syncing
         if accounts[idx].isClaudeCode {
-            await refreshClaudeCode()
+            await refreshClaudeCode(allowKeychainPrompt: true)
             aggregateGlobalStatus()
             return
         }
@@ -331,9 +361,12 @@ final class AppState: ObservableObject {
         return account
     }
 
-    func refreshClaudeCode() async {
+    func refreshClaudeCode(allowKeychainPrompt: Bool = false) async {
         guard claudeCodeAccount != nil else { return }
-        let outcome = await ClaudeCodeService.shared.fetchUsage()
+        if allowKeychainPrompt || claudeCodeAccount?.status == .error {
+            KeychainAccess.invalidate(service: "Claude Code-credentials", rearmPrompt: allowKeychainPrompt)
+        }
+        let outcome = await ClaudeCodeService.shared.fetchUsage(allowKeychainPrompt: allowKeychainPrompt)
         guard let idx = accounts.firstIndex(where: { $0.isClaudeCode }) else { return }
 
         switch outcome {
@@ -429,14 +462,12 @@ final class AppState: ObservableObject {
             agAccount?.statusMessage = "Antigravity isn't running. Open the app, then refresh."
             agAccount?.status = .error
         case .unauthorized:
-            // A server answered but rejected us. Two distinct causes share this
-            // state: the IDE is open and its CSRF scheme changed, or only the
-            // `agy` CLI is running and refuses token-less calls. The wording has
-            // to fit both, since the CLI-only case is the common one.
-            agAccount?.statusMessage = "Antigravity refused the request. Open or restart the app, then refresh."
+            // Local HTTPS answered but rejected CSRF, and the `agy -p=/usage`
+            // fallback also failed — typically an unsigned-in or stale CLI.
+            agAccount?.statusMessage = "Couldn’t read Antigravity quota. Run `agy` and sign in, then refresh."
             agAccount?.status = .error
         case .failed:
-            agAccount?.statusMessage = nil
+            agAccount?.statusMessage = "Couldn’t read Antigravity quota. Update `agy` or open the Antigravity app, then refresh."
             agAccount?.status = .error
         }
     }
@@ -455,8 +486,15 @@ final class AppState: ObservableObject {
         }
     }
 
-    func refreshCursor() async {
+    func refreshCursor(allowKeychainPrompt: Bool = false) async {
         guard cursorAccount?.token.isEmpty == false else { return }
+        // After a Keychain denial the outcome is cached; a manual refresh must
+        // clear it so macOS can ask once more (choose Always Allow).
+        if allowKeychainPrompt || cursorAccount?.status == .error {
+            KeychainAccess.invalidate(service: "cursor-access-token", rearmPrompt: allowKeychainPrompt)
+            KeychainAccess.invalidate(service: "cursor-refresh-token", rearmPrompt: allowKeychainPrompt)
+            KeychainAccess.invalidate(service: "Cursor Safe Storage", rearmPrompt: allowKeychainPrompt)
+        }
         switch await CursorService.fetchQuota() {
         case .success(let email, let quota):
             if let email { cursorAccount?.email = email }
@@ -466,7 +504,7 @@ final class AppState: ObservableObject {
             cursorAccount?.status = .online
             checkCursorUsageAlert()
         case .notLoggedIn:
-            cursorAccount?.statusMessage = "Allow Keychain access for Cursor, then refresh."
+            cursorAccount?.statusMessage = "Tap refresh and choose Always Allow for Keychain."
             cursorAccount?.status = .error
         case .unauthorized:
             cursorAccount?.statusMessage = "Cursor session expired. Sign in again in the Cursor app."
@@ -496,6 +534,32 @@ final class AppState: ObservableObject {
         case .failed:
             grokAccount?.statusMessage = "Could not read Grok usage. Run `grok login`, then refresh."
             grokAccount?.status = .error
+        }
+    }
+
+    func refreshCopilot(allowKeychainPrompt: Bool = false) async {
+        guard copilotAccount?.token.isEmpty == false else { return }
+        if allowKeychainPrompt || copilotAccount?.status == .error {
+            KeychainAccess.invalidate(service: "github-copilot-app", rearmPrompt: allowKeychainPrompt)
+            KeychainAccess.invalidate(service: "gh:github.com", rearmPrompt: allowKeychainPrompt)
+        }
+        switch await CopilotService.fetchQuota(allowKeychainPrompt: allowKeychainPrompt) {
+        case .success(let email, let quota):
+            if let email { copilotAccount?.email = email }
+            copilotAccount?.quota = quota
+            copilotAccount?.lastFetch = Date()
+            copilotAccount?.statusMessage = nil
+            copilotAccount?.status = .online
+            checkCopilotUsageAlert()
+        case .notLoggedIn:
+            copilotAccount?.statusMessage = "Tap refresh and choose Always Allow for Keychain (or run `copilot login`)."
+            copilotAccount?.status = .error
+        case .unauthorized:
+            copilotAccount?.statusMessage = "Copilot auth expired. Run `copilot login` again."
+            copilotAccount?.status = .error
+        case .failed:
+            copilotAccount?.statusMessage = "Could not read Copilot usage. Run `copilot login`, then refresh."
+            copilotAccount?.status = .error
         }
     }
 
@@ -640,6 +704,24 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func checkCopilotUsageAlert() {
+        let threshold = alertThreshold
+        guard threshold > 0,
+              let acc = copilotAccount, acc.status == .online,
+              let usedPct = acc.quota?.primaryUsedPct else { return }
+
+        if usedPct >= threshold {
+            if copilotAccount?.alertedHighUsage == false {
+                copilotAccount?.alertedHighUsage = true
+                NotificationManager.shared.notify(
+                    title: "Copilot — \(usedPct)% of credits used",
+                    body: "Your GitHub Copilot credits have crossed \(threshold)% usage.")
+            }
+        } else {
+            copilotAccount?.alertedHighUsage = false
+        }
+    }
+
     // MARK: - Menu-bar pin
 
     /// Pins a provider to the menu bar, or unpins it when it is already pinned.
@@ -670,6 +752,7 @@ final class AppState: ObservableObject {
         case .commandCode:    stillExists = commandCodeAccount != nil
         case .cursor:         stillExists = cursorAccount != nil
         case .grok:           stillExists = grokAccount != nil
+        case .copilot:        stillExists = copilotAccount != nil
         }
         if !stillExists { pinnedProvider = nil }
     }
@@ -706,6 +789,9 @@ final class AppState: ObservableObject {
         case .grok:
             guard let pct = grokAccount?.quota?.weeklyUsedPct else { return nil }
             return PinnedSummary(label: "Grok", percent: pct)
+        case .copilot:
+            guard let pct = copilotAccount?.quota?.primaryUsedPct else { return nil }
+            return PinnedSummary(label: "Copilot", percent: pct)
         }
     }
 
@@ -728,6 +814,9 @@ final class AppState: ObservableObject {
         }
         if let grok = grokAccount {
             if grok.status == .online { anySuccess = true } else { allSuccess = false }
+        }
+        if let copilot = copilotAccount {
+            if copilot.status == .online { anySuccess = true } else { allSuccess = false }
         }
         if allSuccess {
             globalStatus = .online
@@ -823,7 +912,7 @@ final class AppState: ObservableObject {
         }
         cursorAccount = CursorAccount(token: creds.token, email: creds.email, status: .syncing)
         saveToDisk()
-        await refreshCursor()
+        await refreshCursor(allowKeychainPrompt: true)
         aggregateGlobalStatus()
         return nil
     }
@@ -855,6 +944,26 @@ final class AppState: ObservableObject {
         aggregateGlobalStatus()
     }
 
+    // MARK: - Copilot linking
+
+    func linkCopilot() async -> String? {
+        guard let creds = CopilotService.login() else {
+            return "No Copilot login found. Run `copilot login` (or `gh auth login`) first."
+        }
+        copilotAccount = CopilotAccount(token: creds.token, email: creds.email, status: .syncing)
+        saveToDisk()
+        await refreshCopilot(allowKeychainPrompt: true)
+        aggregateGlobalStatus()
+        return nil
+    }
+
+    func unlinkCopilot() {
+        copilotAccount = nil
+        prunePinIfDangling()
+        saveToDisk()
+        aggregateGlobalStatus()
+    }
+
     // MARK: - Settings
 
     func setRefreshMinutes(_ minutes: Int) {
@@ -875,6 +984,7 @@ final class AppState: ObservableObject {
         commandCodeAccount?.alertedHighUsage = false
         cursorAccount?.alertedHighUsage = false
         grokAccount?.alertedHighUsage = false
+        copilotAccount?.alertedHighUsage = false
         saveToDisk()
         for i in accounts.indices where accounts[i].status == .online {
             checkSessionUsageAlert(index: i)
@@ -884,6 +994,7 @@ final class AppState: ObservableObject {
         checkCommandCodeUsageAlert()
         checkCursorUsageAlert()
         checkGrokUsageAlert()
+        checkCopilotUsageAlert()
     }
 
     // MARK: - Session automation

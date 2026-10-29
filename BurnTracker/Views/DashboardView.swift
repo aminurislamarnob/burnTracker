@@ -199,13 +199,19 @@ struct DashboardView: View {
                 account: cursor,
                 isPinned: app.isPinned(.cursor),
                 onTogglePin: { app.togglePin(.cursor) },
-                onRefresh: { Task { await app.refreshCursor() } })
+                onRefresh: { Task { await app.refreshCursor(allowKeychainPrompt: true) } })
         } else if cardId == "grok", let grok = app.grokAccount {
             GrokCardView(
                 account: grok,
                 isPinned: app.isPinned(.grok),
                 onTogglePin: { app.togglePin(.grok) },
                 onRefresh: { Task { await app.refreshGrok() } })
+        } else if cardId == "copilot", let copilot = app.copilotAccount {
+            CopilotCardView(
+                account: copilot,
+                isPinned: app.isPinned(.copilot),
+                onTogglePin: { app.togglePin(.copilot) },
+                onRefresh: { Task { await app.refreshCopilot(allowKeychainPrompt: true) } })
         } else if cardId == "antigravity", let ag = app.agAccount {
             CliQuotaCardView(
                 title: "Antigravity",

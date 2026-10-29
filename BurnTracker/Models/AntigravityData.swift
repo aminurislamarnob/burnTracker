@@ -54,6 +54,8 @@ struct TrackerSettings: Codable {
     var cursorAccount: PersistedAg?
     /// The linked Grok account (Grok CLI login on this Mac).
     var grokAccount: PersistedAg?
+    /// The linked GitHub Copilot account (Copilot CLI / `gh` login on this Mac).
+    var copilotAccount: PersistedAg?
     /// The Claude Code account (the `claude` CLI's own login on this Mac).
     var claudeCodeAccount: PersistedClaudeCode?
     /// Token of the provider pinned to the menu bar (see `PinnedProvider`).
@@ -64,7 +66,7 @@ struct TrackerSettings: Codable {
 
     enum CodingKeys: String, CodingKey {
         case accounts, agAccount, geminiAccount, commandCodeAccount, cursorAccount, grokAccount
-        case claudeCodeAccount, pinnedProvider
+        case copilotAccount, claudeCodeAccount, pinnedProvider
         case refreshMinutes, alertThreshold, cardOrder
     }
 
@@ -74,6 +76,7 @@ struct TrackerSettings: Codable {
          commandCodeAccount: PersistedAg? = nil,
          cursorAccount: PersistedAg? = nil,
          grokAccount: PersistedAg? = nil,
+         copilotAccount: PersistedAg? = nil,
          claudeCodeAccount: PersistedClaudeCode? = nil,
          pinnedProvider: String? = nil,
          refreshMinutes: Int = 15,
@@ -85,6 +88,7 @@ struct TrackerSettings: Codable {
         self.commandCodeAccount = commandCodeAccount
         self.cursorAccount = cursorAccount
         self.grokAccount = grokAccount
+        self.copilotAccount = copilotAccount
         self.claudeCodeAccount = claudeCodeAccount
         self.pinnedProvider = pinnedProvider
         self.refreshMinutes = refreshMinutes
@@ -100,6 +104,7 @@ struct TrackerSettings: Codable {
         commandCodeAccount = try? c.decode(PersistedAg.self, forKey: .commandCodeAccount)
         cursorAccount = try? c.decode(PersistedAg.self, forKey: .cursorAccount)
         grokAccount = try? c.decode(PersistedAg.self, forKey: .grokAccount)
+        copilotAccount = try? c.decode(PersistedAg.self, forKey: .copilotAccount)
         claudeCodeAccount = try? c.decode(PersistedClaudeCode.self, forKey: .claudeCodeAccount)
         pinnedProvider = try? c.decode(String.self, forKey: .pinnedProvider)
         refreshMinutes = (try? c.decode(Int.self, forKey: .refreshMinutes)) ?? 15

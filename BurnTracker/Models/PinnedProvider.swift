@@ -20,6 +20,7 @@ enum PinnedProvider: Equatable {
     case commandCode
     case cursor
     case grok
+    case copilot
 
     var token: String {
         switch self {
@@ -29,6 +30,7 @@ enum PinnedProvider: Equatable {
         case .commandCode:    return "commandCode"
         case .cursor:         return "cursor"
         case .grok:           return "grok"
+        case .copilot:        return "copilot"
         }
     }
 
@@ -55,6 +57,7 @@ enum PinnedProvider: Equatable {
         case "commandCode": self = .commandCode
         case "cursor":      self = .cursor
         case "grok":        self = .grok
+        case "copilot":     self = .copilot
         default:            return nil
         }
     }
